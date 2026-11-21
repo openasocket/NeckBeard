@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "neckbeard",
+  "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.",
+  "owner": {
+    "name": "neckbeard contributors"
+  },
+  "plugins": [
+    {
+      "name": "neckbeard",
+      "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.",
+      "source": "./",
+      "category": "security"
+    }
+  ]
+}

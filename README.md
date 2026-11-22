@@ -25,12 +25,12 @@
 </p>
 
 <p align="center">
-  <img src="assets/hero.png" width="880" alt="NeckBeard: Ponytail's minimalism with a trust boundary, a named load, and complexity hidden inside.">
+  <img src="assets/hero.png" width="880" alt="NeckBeard: Inspired by Ponytail's minimalism, with a trust boundary, a named load, and complexity hidden inside.">
 </p>
 
 <p align="center">
   <strong>Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.</strong><br>
-  <sub>It comes from <a href="https://github.com/DietrichGebert/ponytail">ponytail</a> and keeps its question ladder, and lean is that ladder rather than a fourth gate.</sub>
+  <sub>Inspired by <a href="https://github.com/DietrichGebert/ponytail">Ponytail</a> and its minimalist question ladder—lean is that ladder rather than a fourth gate.</sub>
 </p>
 
 ---
@@ -49,7 +49,7 @@ The full rules and gates live in [`skills/neckbeard/SKILL.md`](skills/neckbeard/
   <img src="assets/ladder.png" width="880" alt="Ask four framing questions, then walk the 6-rung question ladder and take the first rung that passes the gates.">
 </p>
 
-Before touching a file, NeckBeard reads the code, its callers, and its tests, asks four framing questions (blast radius, trust boundary, named load as a number, and how to hide necessary complexity from the user), and walks Ponytail's six-rung minimalist ladder.
+Before touching a file, NeckBeard reads the code, its callers, and its tests, asks four framing questions (blast radius, trust boundary, named load as a number, and how to hide necessary complexity from the user), and walks the six-rung minimalist ladder (inspired by Ponytail).
 
 Then it enforces the three gates from line one:
 
@@ -248,9 +248,9 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 
 ---
 
-## How it builds on Ponytail
+## How it differs from Ponytail (our minimalist inspiration)
 
-| Dimension | Ponytail | NeckBeard |
+| Dimension | Ponytail (Inspiration) | NeckBeard |
 |---|---|---|
 | **Core philosophy** | Least new code that solves the task | Least new code that is correct, safe at the trust boundary, fast at a named load, and hides complexity from the user |
 | **Pre-write framing** | Scope & callers | Scope & callers + **named trust boundary** + **named load as a number** + **hidden complexity boundary** |

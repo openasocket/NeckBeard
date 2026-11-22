@@ -4,6 +4,20 @@ Pick your agent below. Not listed? Most agents read [`AGENTS.md`](AGENTS.md): co
 
 The Claude Code and Codex plugins run lightweight Node.js lifecycle hooks (`node >= 18`, zero dependencies), so `node` should be on your non-interactive shell `PATH`.
 
+## One-Command Cross-Platform Multi-Harness Installer & Updater (Windows, macOS, Linux)
+
+To automatically detect every compatible AI coding agent installed on your system (`Claude Code`, `Codex`, `GitHub Copilot CLI`, `Grok CLI`, `Antigravity CLI`, `Gemini CLI`, `Pi / Oh My Pi`, `OpenCode / Kilo Code`), update their plugin caches to the current NeckBeard release, disable legacy `ponytail@ponytail` collisions, and rebuild your local Command Center (`~/.config/neckbeard/telemetry/dashboard.html`):
+
+```bash
+node scripts/install-all.js
+# or: npm run sync
+```
+
+Flags:
+- `node scripts/install-all.js --dry-run` — Inspect which agent harnesses are detected on your system without making changes.
+- `node scripts/install-all.js --keep-ponytail` — Keep `ponytail@ponytail` enabled alongside NeckBeard if both are installed.
+- `node scripts/install-all.js --json` — Emit machine-readable JSON output.
+
 ## Claude Code
 
 From the command line:

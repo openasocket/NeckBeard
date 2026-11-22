@@ -7,7 +7,12 @@
   "repository": "https://github.com/openasocket/NeckBeard",
   "engines": { "node": ">=18" },
   "pi": "./pi-extension/index.js",
+  "bin": {
+    "neckbeard-sync": "./scripts/install-all.js"
+  },
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "sync": "node scripts/install-all.js",
+    "install:all": "node scripts/install-all.js"
   }
 }

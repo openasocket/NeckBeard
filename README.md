@@ -148,6 +148,16 @@ Full per-host install guide and adapter matrix: **[INSTALL.md](INSTALL.md)** and
 
 ## Install
 
+**One-Command Cross-Platform Auto-Installer & Updater (Windows, macOS, Linux):**
+
+Once you have cloned or downloaded NeckBeard on a system, run one command to automatically detect and install/update **every compatible AI coding agent harness** on your machine (`Claude Code`, `Codex`, `GitHub Copilot CLI`, `Grok CLI`, `Antigravity CLI`, `Gemini CLI`, `Pi / Oh My Pi`, `OpenCode / Kilo Code`) and rebuild your local Command Center:
+
+```bash
+node scripts/install-all.js
+# or: npm run sync
+# preview detected harnesses without changes: node scripts/install-all.js --dry-run
+```
+
 **Claude Code:**
 
 ```bash

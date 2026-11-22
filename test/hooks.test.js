@@ -392,4 +392,17 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   const sysOut = { system: [] };
   await v1['experimental.chat.system.transform']({}, sysOut);
   assert.ok(sysOut.system.length === 1 && sysOut.system[0].includes('NECKBEARD MODE ACTIVE'));
+
+  const installer = require('../scripts/install-all');
+  const fakeHome = tmpState();
+  fs.mkdirSync(path.join(fakeHome, '.claude', 'plugins'), { recursive: true });
+  const dryReport = installer.syncAllHarnesses({
+    dryRun: true,
+    env: { HOME: fakeHome, USERPROFILE: fakeHome, PATH: '' },
+  });
+  assert.strictEqual(dryReport.dryRun, true);
+  assert.ok(Array.isArray(dryReport.results) && dryReport.results.length >= 7);
+  const claudeRow = dryReport.results.find((r) => r.harness === 'Claude Code');
+  assert.strictEqual(claudeRow.detected, true);
+  assert.match(installer.formatSyncReport(dryReport), /NeckBeard Multi-Harness Installer & Updater/);
 });

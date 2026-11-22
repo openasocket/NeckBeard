@@ -55,6 +55,7 @@ test('skill directory layout', () => {
     'hooks/band/dashboard.ts',
     'hooks/band-import.js',
     'hooks/vibes.js',
+    'scripts/install-all.js',
     'pi-extension/index.js',
     '.opencode/plugins/neckbeard.mjs',
     'assets/badge.svg',

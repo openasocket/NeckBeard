@@ -442,7 +442,10 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
     appendEntry() {},
     sendUserMessage() {},
   });
-  assert.ok(commands.neckbeard && commands['neckbeard-review'] && commands['neckbeard-gain']);
+  assert.ok(commands.neckbeard && commands['neckbeard-review'] && commands['neckbeard-gain'] && commands['neckbeard-map']);
+  assert.deepStrictEqual(parseCommand('/neckbeard map'), { action: 'map' });
+  assert.deepStrictEqual(parseCommand('/neckbeard-map'), { action: 'map' });
+  assert.deepStrictEqual(parseCommand('$neckbeard-map'), { action: 'map' });
   await listeners.agent_start({}, {
     ui: {
       theme: { fg: (_c, t) => t },

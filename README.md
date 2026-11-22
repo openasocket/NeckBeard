@@ -83,7 +83,8 @@ Then it enforces the three gates from line one:
 | `neckbeard-review` | Reviews a change against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md) with concrete failure cases, variant search, and `--ci` gate mode. |
 | `neckbeard-audit` | Audits a repo or folder (`lite` default: targeted execution flows and major internal/external data & trust boundaries; `complete`: every single code, config, and doc file in the repo, with an upfront time/token/tool-call warning) with zero artificial finding cap, full variant search, and explicit `E_patch` vs. `E_rewrite` effort/time math. |
 | `neckbeard-debt` | Scans tracked and untracked files for `risk:`, `shortcut:`, and `ponytail:` markers and enforces the accepted-risk boundary from [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). |
-| `neckbeard-gain` | Local telemetry report and 5-tab Security & Engineering Command Center (`~/.config/neckbeard/telemetry/dashboard.html`): 14-day API cost & prompt-cache velocity chart, clickable per-repository scorecard, per-model cache economics, External→Internal Trust-Boundary Graph, searchable session forensics, and front-and-center 5-pillar `.ai-audit/` VIBES provenance & PRISM risk intelligence. |
+| `neckbeard-map` | Scans tracked production files to build or refresh both the **Security Trust-Boundary Map** (`boundaries`) and **System Architecture & Inter-Module Data-Flow Map** (`architecture`) in `.neckbeard.json` and `~/.config/neckbeard/telemetry/workspaces-meta.json`. |
+| `neckbeard-gain` | Local telemetry report and 5-tab Security & Engineering Command Center (`~/.config/neckbeard/telemetry/dashboard.html`): 14-day API cost & prompt-cache velocity chart, clickable per-repository scorecard, per-model cache economics, External→Internal Trust-Boundary & Architecture Graph, searchable session forensics, and front-and-center 5-pillar `.ai-audit/` VIBES provenance & PRISM risk intelligence. |
 
 ---
 
@@ -105,7 +106,7 @@ For **trust boundaries**, NeckBeard never asks you to do its threat modeling: it
 - **Commands:**
   - `/neckbeard load 200 rps, 50k rows, p95 < 100ms` — Set or update the project's default load target.
   - `/neckbeard load webhook-in=2000 rps burst` — Set a per-boundary load envelope (`boundaryLoad`) for a specific sink or boundary group (`http-in`, `cli-in`, `webhook-in`, `http-out`, `ci`, `auth`, `sql`, `fs`, `proc`, `serde`, `crypto`, `env`, `ai`, `ingress`, `egress`, `supply`, `data`, `exec`).
-  - `/neckbeard map` — Scan or refresh the concise internal and external trust-boundary map.
+  - `/neckbeard map` (or `/neckbeard-map` / `node hooks/surface.js --map`) — Scan or refresh both the security trust-boundary map (`boundaries`) and the system architecture & inter-module data-flow map (`architecture`) in `.neckbeard.json`.
   - `/neckbeard share on` / `/neckbeard share off` — Enable or disable Git sharing of `.neckbeard.json`.
 - **Automatic Boundary-Expansion Drift Alerts & Debt Expiry Triggers:**
   - When a code change adds a new external or internal boundary sink not present in `.neckbeard.json`, NeckBeard flags the unreviewed boundary expansion (`⚠ +N boundary`) in prompt context, in the Claude Code and Pi status bars, and in [`/neckbeard-review`](skills/neckbeard-review/SKILL.md).

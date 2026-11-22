@@ -15,6 +15,7 @@ const {
 } = require('../hooks/lib.js');
 const {
   buildBoundaryMap,
+  buildArchitectureMap,
   readProjectConfig,
   writeProjectConfig,
   ensureFreshBoundaryMap,
@@ -110,9 +111,12 @@ export default function registerNeckbeardPi(host) {
         return;
       }
       if (cmd.type === 'map') {
-        writeProjectConfig(process.cwd(), { boundaries: buildBoundaryMap(process.cwd()) });
+        writeProjectConfig(process.cwd(), {
+          boundaries: buildBoundaryMap(process.cwd()),
+          architecture: buildArchitectureMap(process.cwd()),
+        });
         renderStatusStrip(ctx);
-        ctx?.ui?.notify?.('Refreshed External & Internal Trust-Boundary Map.', 'info');
+        ctx?.ui?.notify?.('Refreshed External & Internal Trust-Boundary & Architecture Map.', 'info');
         return;
       }
       if (cmd.type === 'share') {
@@ -126,7 +130,7 @@ export default function registerNeckbeardPi(host) {
     },
   });
 
-  for (const skillCmd of ['neckbeard-review', 'neckbeard-audit', 'neckbeard-debt', 'neckbeard-gain']) {
+  for (const skillCmd of ['neckbeard-review', 'neckbeard-audit', 'neckbeard-debt', 'neckbeard-gain', 'neckbeard-map']) {
     host.registerCommand(skillCmd, {
       description: skillCmd === 'neckbeard-audit' ? 'Run /skill:neckbeard-audit [lite|complete]' : `Run /skill:${skillCmd}`,
       getArgumentCompletions:

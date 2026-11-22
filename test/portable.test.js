@@ -49,6 +49,7 @@ test('skill directory layout', () => {
     'skills/neckbeard-audit/SKILL.md',
     'skills/neckbeard-debt/SKILL.md',
     'skills/neckbeard-gain/SKILL.md',
+    'skills/neckbeard-map/SKILL.md',
     'hooks/claude-band.json',
     'hooks/band/register.tsx',
     'hooks/band/analyzer.ts',

@@ -10,12 +10,13 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { readInput, readLevel, writeLevel, normalizeLevel, claudeDir, emitContext, rules } = require('./lib');
-const { buildBoundaryMap, readProjectConfig, writeProjectConfig, formatProjectContext } = require('./surface');
+const { buildBoundaryMap, buildArchitectureMap, readProjectConfig, writeProjectConfig, formatProjectContext } = require('./surface');
 
 function parseCommand(prompt) {
   const raw = String(prompt || '').trim();
   const p = raw.toLowerCase();
   if (/^(stop neckbeard|neckbeard off|normal mode)\b/.test(p)) return 'off';
+  if (/^[/@$]neckbeard(?::neckbeard)?-map(?:\s|$)/i.test(raw)) return { action: 'map' };
   const m = raw.match(/^[/@$]neckbeard(?::neckbeard)?(?:\s+([\s\S]+))?$/i);
   if (!m) return null;
   if (!m[1]) return 'on';
@@ -70,12 +71,13 @@ function handleSubcommand(cmd, cwd) {
 
   if (cmd.action === 'map') {
     const boundaries = buildBoundaryMap(cwd);
-    const saved = writeProjectConfig(cwd, { boundaries });
+    const architecture = buildArchitectureMap(cwd);
+    const saved = writeProjectConfig(cwd, { boundaries, architecture });
     try {
       const child = spawn(process.execPath, [path.join(__dirname, 'band-import.js')], { cwd, detached: true, stdio: 'ignore' });
       child.unref();
     } catch { /* best-effort */ }
-    return `NECKBEARD trust-boundary map updated (${saved.shared ? '.neckbeard.json, shared' : 'local'}).\n\n${formatProjectContext(cwd)}`;
+    return `NECKBEARD trust-boundary & architecture map updated (${saved.shared ? '.neckbeard.json, shared' : 'local'}).\n\n${formatProjectContext(cwd)}`;
   }
 
   if (cmd.action === 'share') {

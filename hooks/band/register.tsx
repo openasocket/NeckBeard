@@ -247,7 +247,7 @@ async function buildCurrentWorkspaceMeta($: EngineInterface, state: NeckbeardHud
   const prevVibes = (prevWs.vibes ?? null) as Record<string, unknown> | null
 
   const vibes = await inspectVibesAnnotations($, rootDir)
-  let parsedCfg: { load?: string; boundaryLoad?: Record<string, string>; boundaries?: Record<string, unknown> } = {}
+  let parsedCfg: { load?: string; boundaryLoad?: Record<string, string>; boundaries?: Record<string, unknown>; architecture?: Record<string, unknown> } = {}
   try {
     parsedCfg = JSON.parse(await $.fs.read(`${rootDir}/.neckbeard.json`))
   } catch {}
@@ -277,6 +277,7 @@ async function buildCurrentWorkspaceMeta($: EngineInterface, state: NeckbeardHud
       load: parsedCfg.load ?? state.loadEnvelope ?? (prevWs.load as string) ?? '',
       boundaryLoad: parsedCfg.boundaryLoad ?? (prevWs.boundaryLoad as Record<string, string>) ?? {},
       boundaries: (parsedCfg.boundaries as Record<string, unknown>) ?? (prevWs.boundaries as Record<string, unknown>) ?? { external: {}, internal: {} },
+      architecture: (parsedCfg.architecture as Record<string, unknown>) ?? (prevWs.architecture as Record<string, unknown>) ?? null,
       driftAdded: state.unreviewedBoundaries.length > 0 ? state.unreviewedBoundaries : ((prevWs.driftAdded as string[]) ?? []),
       prismRisk: vibes.maxRisk ?? (prevWs.prismRisk as number | null) ?? null,
       vibes: mergedVibes,
@@ -560,6 +561,28 @@ export const register: Register = (on) => {
     }
     const triggerReview = () => $.command.run({ command: 'neckbeard:neckbeard-review', args: '' })
     const triggerAudit = () => $.command.run({ command: 'neckbeard:neckbeard-audit', args: '' })
+    const triggerMap = async () => {
+      try {
+        const homeDir = await resolveHomeDir($)
+        const claudeDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${homeDir}/.claude`
+        const repo = await $.session.repo().catch(() => null)
+        const rootDir = repo?.root ?? (await $.session.cwd())
+        const surfaceScript = `${claudeDir}/plugins/marketplaces/neckbeard/hooks/surface.js`
+        const importScript = `${claudeDir}/plugins/marketplaces/neckbeard/hooks/band-import.js`
+        if (await $.fs.exists(surfaceScript).catch(() => false)) {
+          await $.process.run(['node', surfaceScript, '--map', rootDir]).catch(() => {})
+        }
+        if (await $.fs.exists(importScript).catch(() => false)) {
+          await $.process.run(['node', importScript]).catch(() => {})
+        }
+        const wsCfg = await inspectWorkspaceConfig($, rootDir)
+        baselineBoundaries = wsCfg.knownBoundaries
+        await update($, hudAtom, (s) => ({ ...s, unreviewedBoundaries: [] }))
+        $.ui.toast('NeckBeard trust-boundary & architecture map refreshed (.neckbeard.json)')
+      } catch {
+        $.ui.toast('neckbeard: unable to refresh boundary map')
+      }
+    }
     const openCommandCenter = () =>
       launchDashboardInBrowser($).catch(() => $.ui.toast('neckbeard: unable to launch dashboard.html'))
     const copyMarkdownSummary = async () => {
@@ -610,6 +633,7 @@ export const register: Register = (on) => {
           <Box flexGrow={1} />
           <Button key="nb-rev" plain label="Review" onPress={triggerReview} />
           <Button key="nb-aud" plain label="Audit" onPress={triggerAudit} />
+          <Button key="nb-map" plain label="Map" onPress={triggerMap} />
           <Button key="nb-cmd" plain label="Dashboard" onPress={openCommandCenter} />
           <Button key="nb-exp" plain label="HUD" onPress={toggleDrawer} />
         </Box>
@@ -724,6 +748,7 @@ export const register: Register = (on) => {
           <Button key="nb-copy" plain label="Copy Report" onPress={copyMarkdownSummary} />
           <Button key="nb-rev" plain label="Review" onPress={triggerReview} />
           <Button key="nb-aud" plain label="Audit" onPress={triggerAudit} />
+          <Button key="nb-map" plain label="Map" onPress={triggerMap} />
           <Button key="nb-dash" plain label="Dashboard" onPress={openCommandCenter} />
           <Button key="nb-fold" plain label="Compact" onPress={toggleDrawer} />
         </Box>

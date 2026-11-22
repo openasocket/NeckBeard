@@ -481,11 +481,13 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   assert.ok(renderedHtml.includes('VIBES Protocol (.ai-audit/)'));
 
   // Verify System Architecture & Inter-Module Data Flow quantification & sanitization in .neckbeard.json
-  const archMap = surface.buildArchitectureMap(ROOT);
+  const surfaceMod = require('../hooks/surface');
+  const repoRoot = path.join(__dirname, '..');
+  const archMap = surfaceMod.buildArchitectureMap(repoRoot);
   assert.ok(archMap && archMap.moduleCount >= 2, 'buildArchitectureMap discovers repository modules');
   assert.ok(Array.isArray(archMap.modules) && archMap.modules.some((m) => m.startsWith('hooks:')), 'modules include hooks module with role');
   assert.ok(Array.isArray(archMap.flows) && archMap.flows.includes('scripts->hooks'), 'flows include inter-module dependency edges');
-  const sanitizedArch = surface.sanitizeArchitecture({
+  const sanitizedArch = surfaceMod.sanitizeArchitecture({
     fileCount: 12,
     moduleCount: 3,
     boundaryFileCount: 5,
@@ -496,11 +498,7 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   });
   assert.deepStrictEqual(sanitizedArch.modules, ['hooks:gateway(8f,3b)']);
   assert.deepStrictEqual(sanitizedArch.flows, ['scripts->hooks']);
-  const formattedArchCtx = surface.formatProjectContext({
-    load: '100 rps',
-    boundaries: surface.buildBoundaryMap(ROOT),
-    architecture: archMap,
-  });
+  const formattedArchCtx = surfaceMod.formatProjectContext(repoRoot);
   assert.ok(formattedArchCtx.includes('Arch Map ['), 'formatProjectContext includes Arch Map summary');
   assert.ok(formattedArchCtx.includes('flows:'), 'formatProjectContext includes inter-module data flows');
 });

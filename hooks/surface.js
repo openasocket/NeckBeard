@@ -11,7 +11,7 @@ const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 
 const BUDGET = Number(process.env.NECKBEARD_SURFACE_CHARS || 1500);
-const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 680);
+const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 960);
 const DEFAULT_MAP_MAX_AGE_MS = Number(process.env.NECKBEARD_MAP_MAX_AGE_HOURS || 24) * 60 * 60 * 1000;
 const MAX_FILES = 3000;
 const MAX_BYTES = 200 * 1024;
@@ -406,7 +406,7 @@ function sanitizeArchitecture(raw) {
       const m = modRe.exec(s);
       if (!m) continue;
       const modName = m[1];
-      if (modName.startsWith('/') || modName.startsWith('..') || /^(?:Users|home|private|var|tmp|etc)\//.test(modName)) continue;
+      if (modName.startsWith('/') || modName.startsWith('..') || /(^|\/)\.env/i.test(modName) || /^(?:Users|home|private|var|tmp|etc)(?:\/|$)/.test(modName)) continue;
       if (!modules.includes(s) && modules.length < 24) modules.push(s);
     }
   }
@@ -418,8 +418,10 @@ function sanitizeArchitecture(raw) {
       if (!s || SENSITIVE_TEXT.test(s)) { SENSITIVE_TEXT.lastIndex = 0; continue; }
       SENSITIVE_TEXT.lastIndex = 0;
       const m = flowRe.exec(s);
-      if (!m) continue;
+      if (!m || m[1] === m[2]) continue;
       if (m[1].startsWith('/') || m[2].startsWith('/') || m[1].startsWith('..') || m[2].startsWith('..')) continue;
+      if (/(^|\/)\.env/i.test(m[1]) || /(^|\/)\.env/i.test(m[2])) continue;
+      if (/^(?:Users|home|private|var|tmp|etc)(?:\/|$)/.test(m[1]) || /^(?:Users|home|private|var|tmp|etc)(?:\/|$)/.test(m[2])) continue;
       if (!flows.includes(s) && flows.length < 24) flows.push(s);
     }
   }

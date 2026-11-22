@@ -8,7 +8,7 @@
 
 const path = require('path');
 const { readInput, readLevel, recordGuardBlock, emitDeny } = require('./lib');
-const { checkNeckbeardJson } = require('./surface');
+const { checkNeckbeardJson, checkCrewStoreJson } = require('./surface');
 
 const SECRETS = [
   ['private key', /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----/],
@@ -124,6 +124,14 @@ function check(tool, input, level) {
     const badCfg = checkNeckbeardJson(text);
     if (badCfg) {
       return `neckbeard blocked this Write to .neckbeard.json: ${badCfg}. Use /neckbeard load <value> or /neckbeard map so the file stays strictly censored.`;
+    }
+  }
+
+  // Censor check on sibling 5-Character Crew stores (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json, .rainmaker-inbox.jsonl).
+  if ((tool === 'Write' || tool === 'Edit') && /(?:^|[\\/])\.(?:rainmaker|propellerhead|hipster|edgelord)\.json$|(?:^|[\\/])\.rainmaker-inbox\.jsonl$/.test(where)) {
+    const badCrew = checkCrewStoreJson(text, where);
+    if (badCrew) {
+      return `neckbeard blocked this ${tool} to crew store (${path.basename(where)}): ${badCrew}. Crew stores must never contain secrets, URLs, internal hostnames, IPs, or absolute local paths.`;
     }
   }
 

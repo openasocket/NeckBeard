@@ -11,8 +11,17 @@ const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 
 const BUDGET = Number(process.env.NECKBEARD_SURFACE_CHARS || 1500);
-const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 960);
+const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 1200);
 const DEFAULT_MAP_MAX_AGE_MS = Number(process.env.NECKBEARD_MAP_MAX_AGE_HOURS || 24) * 60 * 60 * 1000;
+
+// Sibling 5-Character Crew repo-local stores and shared PM intake queue.
+const CREW_PEER_FILES = {
+  rainmaker: '.rainmaker.json',
+  propellerhead: '.propellerhead.json',
+  hipster: '.hipster.json',
+  edgelord: '.edgelord.json',
+};
+const RAINMAKER_INBOX_FILE = '.rainmaker-inbox.jsonl';
 const MAX_FILES = 3000;
 const MAX_BYTES = 200 * 1024;
 const SRC = /\.(py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|java|kt|php|cs|swift|sh|yml|yaml)$/;
@@ -708,7 +717,116 @@ function formatProjectContext(root = process.cwd(), env = process.env) {
       lines.push(`Boundary Drift [new]: +${drift.added.length} unreviewed (${drift.added.slice(0, 3).join(', ')}) — verify in /neckbeard-review or run /neckbeard map`);
     }
   }
+  const crewLines = formatCrewContext(root);
+  if (crewLines) lines.push(crewLines);
   return lines.join('\n').slice(0, MAP_BUDGET);
+}
+
+// Validates any Crew store JSON (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json) or JSONL (.rainmaker-inbox.jsonl)
+// against secrets, URLs, hostnames, IPs, emails, and absolute local paths.
+function checkCrewStoreJson(rawText, fileName = '') {
+  const s = String(rawText || '').trim();
+  if (!s) return 'empty crew store file';
+  if (SENSITIVE_TEXT.test(s)) {
+    SENSITIVE_TEXT.lastIndex = 0;
+    return 'contains a URL, internal hostname, IP address, email, or absolute local path';
+  }
+  SENSITIVE_TEXT.lastIndex = 0;
+  if (String(fileName).endsWith('.jsonl')) {
+    const lines = s.split('\n').map((l) => l.trim()).filter(Boolean);
+    for (let i = 0; i < lines.length; i++) {
+      let row;
+      try { row = JSON.parse(lines[i]); } catch { return `invalid JSONL on line ${i + 1}`; }
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return `line ${i + 1} must be a JSON object`;
+    }
+    return null;
+  }
+  let parsed;
+  try { parsed = JSON.parse(s); } catch { return 'invalid JSON'; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'root must be a JSON object';
+  return null;
+}
+
+// Reads sibling Crew stores (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json, .rainmaker-inbox.jsonl) when present.
+function readCrewPeerStores(root = process.cwd()) {
+  const peers = {};
+  for (const [key, relFile] of Object.entries(CREW_PEER_FILES)) {
+    const fp = path.join(root, relFile);
+    if (!fs.existsSync(fp)) continue;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(fp, 'utf8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) peers[key] = parsed;
+    } catch { /* ignore malformed peer store */ }
+  }
+  const inboxPath = path.join(root, RAINMAKER_INBOX_FILE);
+  let inboxPending = 0;
+  if (fs.existsSync(inboxPath)) {
+    try {
+      const raw = fs.readFileSync(inboxPath, 'utf8');
+      for (const line of raw.split('\n')) {
+        const t = line.trim();
+        if (!t.startsWith('{')) continue;
+        try {
+          const item = JSON.parse(t);
+          if (!item.status || item.status === 'pending' || item.status === 'proposed') inboxPending++;
+        } catch {}
+      }
+    } catch {}
+  }
+  return { peers, inboxPending };
+}
+
+// Formats a concise, sanitized summary of active sibling Crew stores for SessionStart / SubagentStart.
+function formatCrewContext(root = process.cwd()) {
+  const { peers, inboxPending } = readCrewPeerStores(root);
+  const parts = [];
+  if (peers.rainmaker) {
+    const rm = peers.rainmaker;
+    const outcome = sanitizeLoad(String(rm.activeOutcome || rm.northStar || 'active')).slice(0, 60);
+    const cut = sanitizeLoad(String(Array.isArray(rm.cutline) ? rm.cutline.slice(0, 2).join(', ') : (rm.cutline || ''))).slice(0, 50);
+    parts.push(`RainMaker(Val): ${outcome}${cut ? ` [cut: ${cut}]` : ''}${inboxPending > 0 ? ` (${inboxPending} inbox)` : ''}`);
+  } else if (inboxPending > 0) {
+    parts.push(`RainMaker Inbox: ${inboxPending} pending proposal(s)`);
+  }
+  if (peers.propellerhead) {
+    const ph = peers.propellerhead;
+    const inv = sanitizeLoad(String(Array.isArray(ph.invariants) && ph.invariants[0] ? (ph.invariants[0].rule || ph.invariants[0]) : (ph.activeInvariant || ''))).slice(0, 60);
+    const task = sanitizeLoad(String(ph.activeSlice || ph.rootMechanism || '')).slice(0, 50);
+    if (inv || task) parts.push(`PropellerHead(Danny): ${[inv && `inv:${inv}`, task && `focus:${task}`].filter(Boolean).join(' ')}`);
+  }
+  if (peers.hipster) {
+    const hp = peers.hipster;
+    const ux = sanitizeLoad(String(hp.activeFlow || hp.glassStatus || 'armed')).slice(0, 50);
+    parts.push(`Hipster(Sammy): ${ux}`);
+  }
+  if (peers.edgelord) {
+    const el = peers.edgelord;
+    const br = Number(el.openBreaches || (Array.isArray(el.breaches) ? el.breaches.length : 0)) || 0;
+    parts.push(`EdgeLord(Ronnie): ${br} open breach(es)`);
+  }
+  return parts.length > 0 ? `Crew Peers [active] ${parts.join(' | ')}` : '';
+}
+
+// Appends a strictly censored work/remediation proposal from NeckBeard (Ashy Larry / Lari) to RainMaker's shared intake queue (.rainmaker-inbox.jsonl).
+function appendCrewInboxProposal(root = process.cwd(), proposal = {}) {
+  const cleanSummary = sanitizeLoad(String(proposal.summary || proposal.title || '')).slice(0, 160);
+  if (!cleanSummary) return null;
+  const record = {
+    id: sanitizeLoad(String(proposal.id || `nb-${Date.now().toString(36)}`)).slice(0, 32),
+    timestampIso: new Date().toISOString(),
+    from: 'neckbeard',
+    persona: proposal.persona === 'lari' ? 'Ashy Lari' : 'Ashy Larry',
+    kind: ['audit-finding', 'boundary-drift', 'expired-debt', 'security-gate', 'fast-gate', 'done-gate'].includes(proposal.kind)
+      ? proposal.kind
+      : 'audit-finding',
+    boundary: sanitizeEntry(String(proposal.boundary || '')) || '',
+    ePatch: sanitizeLoad(String(proposal.ePatch || '')).slice(0, 48),
+    summary: cleanSummary,
+    status: 'pending',
+  };
+  const fp = path.join(root, RAINMAKER_INBOX_FILE);
+  fs.appendFileSync(fp, JSON.stringify(record) + '\n', 'utf8');
+  return record;
 }
 
 module.exports = {
@@ -723,6 +841,12 @@ module.exports = {
   sanitizeArchitecture,
   sanitizeProjectConfig,
   checkNeckbeardJson,
+  checkCrewStoreJson,
+  readCrewPeerStores,
+  formatCrewContext,
+  appendCrewInboxProposal,
+  CREW_PEER_FILES,
+  RAINMAKER_INBOX_FILE,
   parseLoadMetrics,
   checkRiskLoadExpiry,
   readProjectConfig,

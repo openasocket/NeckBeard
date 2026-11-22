@@ -446,6 +446,9 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   assert.deepStrictEqual(parseCommand('/neckbeard map'), { action: 'map' });
   assert.deepStrictEqual(parseCommand('/neckbeard-map'), { action: 'map' });
   assert.deepStrictEqual(parseCommand('$neckbeard-map'), { action: 'map' });
+  assert.deepStrictEqual(parseCommand('/larry paranoid'), 'paranoid');
+  assert.deepStrictEqual(parseCommand('/lari crew'), { action: 'crew' });
+  assert.deepStrictEqual(parseCommand('/neckbeard crew'), { action: 'crew' });
   await listeners.agent_start({}, {
     ui: {
       theme: { fg: (_c, t) => t },
@@ -513,4 +516,43 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   const formattedArchCtx = surfaceMod.formatProjectContext(repoRoot);
   assert.ok(formattedArchCtx.includes('Arch Map ['), 'formatProjectContext includes Arch Map summary');
   assert.ok(formattedArchCtx.includes('flows:'), 'formatProjectContext includes inter-module data flows');
+
+  // Verify 5-Character Crew peer store reading, inbox proposal censorship, and PreToolUse crew store guard
+  const crewDir = tmpState();
+  fs.writeFileSync(path.join(crewDir, '.rainmaker.json'), JSON.stringify({
+    shared: true,
+    persona: 'valentino',
+    activeOutcome: 'Deliver 1-click multi-workspace ROI export',
+    cutline: ['No external cloud upload'],
+  }));
+  fs.writeFileSync(path.join(crewDir, '.propellerhead.json'), JSON.stringify({
+    shared: true,
+    persona: 'danny',
+    activeInvariant: 'Escape inline script newlines as \\\\n',
+    activeSlice: 'SLICE-1: surface.js',
+  }));
+  surfaceMod.appendCrewInboxProposal(crewDir, {
+    id: 'nb-test-1',
+    persona: 'larry',
+    kind: 'audit-finding',
+    boundary: 'hooks/surface.js->fs',
+    ePatch: '10m (5 LOC)',
+    summary: 'Sanitize crew inbox proposals at edge https://internal.corp/secret',
+  });
+  const crewCtx = surfaceMod.formatCrewContext(crewDir);
+  assert.match(crewCtx, /Crew Peers \[active\]/);
+  assert.match(crewCtx, /RainMaker\(Val\): Deliver 1-click multi-workspace ROI export/);
+  assert.match(crewCtx, /\(1 inbox\)/);
+  assert.match(crewCtx, /PropellerHead\(Danny\):/);
+  const inboxRaw = fs.readFileSync(path.join(crewDir, '.rainmaker-inbox.jsonl'), 'utf8');
+  assert.ok(!inboxRaw.includes('https://internal.corp'), 'appendCrewInboxProposal censors URLs');
+  assert.ok(
+    check('Write', { file_path: '.rainmaker.json', content: '{"activeOutcome":"Call https://secret.internal.corp"}' }, 'full'),
+    'PreToolUse guard blocks uncensored URL in .rainmaker.json'
+  );
+  assert.strictEqual(
+    check('Write', { file_path: '.propellerhead.json', content: '{"shared":true,"persona":"danny","activeInvariant":"Root cause proven"}' }, 'full'),
+    null,
+    'PreToolUse guard allows clean .propellerhead.json'
+  );
 });

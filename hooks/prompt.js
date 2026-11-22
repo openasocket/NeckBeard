@@ -10,14 +10,14 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { readInput, readLevel, writeLevel, normalizeLevel, claudeDir, emitContext, rules } = require('./lib');
-const { buildBoundaryMap, buildArchitectureMap, readProjectConfig, writeProjectConfig, formatProjectContext } = require('./surface');
+const { buildBoundaryMap, buildArchitectureMap, readProjectConfig, writeProjectConfig, formatProjectContext, formatCrewContext } = require('./surface');
 
 function parseCommand(prompt) {
   const raw = String(prompt || '').trim();
   const p = raw.toLowerCase();
   if (/^(stop neckbeard|neckbeard off|normal mode)\b/.test(p)) return 'off';
-  if (/^[/@$]neckbeard(?::neckbeard)?-map(?:\s|$)/i.test(raw)) return { action: 'map' };
-  const m = raw.match(/^[/@$]neckbeard(?::neckbeard)?(?:\s+([\s\S]+))?$/i);
+  if (/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)-map(?:\s|$)/i.test(raw)) return { action: 'map' };
+  const m = raw.match(/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)(?:\s+([\s\S]+))?$/i);
   if (!m) return null;
   if (!m[1]) return 'on';
   const rest = m[1].trim();
@@ -28,6 +28,7 @@ function parseCommand(prompt) {
     const lvl = normalizeLevel(sub);
     if (lvl) return lvl;
     if (sub === 'map') return { action: 'map' };
+    if (sub === 'crew') return { action: 'crew' };
     if (sub === 'load') return { action: 'load', value: '' };
     if (sub === 'share') return { action: 'share', value: '' };
     if (sub === 'band') return { action: 'band', value: 'toggle' };
@@ -36,6 +37,7 @@ function parseCommand(prompt) {
 
   if (sub === 'load') return { action: 'load', value: rest.slice(4).trim() };
   if (sub === 'map') return { action: 'map' };
+  if (sub === 'crew') return { action: 'crew' };
   if (sub === 'share') {
     const mode = tokens[1].toLowerCase();
     return mode === 'on' || mode === 'off' ? { action: 'share', value: mode } : 'unknown';
@@ -78,6 +80,11 @@ function handleSubcommand(cmd, cwd) {
       child.unref();
     } catch { /* best-effort */ }
     return `NECKBEARD trust-boundary & architecture map updated (${saved.shared ? '.neckbeard.json, shared' : 'local'}).\n\n${formatProjectContext(cwd)}`;
+  }
+
+  if (cmd.action === 'crew') {
+    const crewSummary = formatCrewContext(cwd) || 'No sibling Crew stores (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json) initialized in this workspace yet.';
+    return `NECKBEARD (Ashy Larry / Ashy Lari) 5-Character Crew Status:\n${crewSummary}\n\n${formatProjectContext(cwd)}`;
   }
 
   if (cmd.action === 'share') {

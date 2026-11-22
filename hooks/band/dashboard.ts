@@ -576,7 +576,7 @@ export function renderDashboardHtml(
     <div class="rail-heading"><span>Workspaces (<span id="ws-total-cnt">0</span>)</span><span>Spend / Sess</span></div>
     <div id="ws-list" style="overflow-y:auto;flex:1"></div>
     <div class="rail-footer">
-      NeckBeard Command Center v0.3.2<br>
+      NeckBeard Command Center v0.3.3<br>
       Economics + 3-Gate + VIBES Hub<br>
       100% Local · Zero Network Calls
     </div>

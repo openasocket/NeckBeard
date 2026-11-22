@@ -769,13 +769,38 @@ export function renderDashboardHtml(
       </div>
     </section>
 
-    <!-- SECTION 3: TRUST-BOUNDARY TOPOLOGY GRAPH (Dynamically Updates Per Workspace) -->
+    <!-- SECTION 3: TRUST-BOUNDARY TOPOLOGY GRAPH (Dynamically Adapts Per Project Structure) -->
     <section class="section-card" id="pane-overview">
       <div class="section-head">
-        <h2 id="topo-heading">External → Internal Trust-Boundary Graph (.neckbeard.json)</h2>
+        <div>
+          <h2 id="topo-heading">External → Project Modules → Internal Trust-Boundary Graph</h2>
+          <div id="topo-summary" style="font:400 12px var(--nb-mono);color:var(--nb-muted);margin-top:3px"></div>
+        </div>
         <span id="ov-drift" class="badge-chip">✓ Baseline Verified</span>
       </div>
-      <svg id="boundary-svg" viewBox="0 0 960 360" style="width:100%;height:auto;display:block"></svg>
+      <div style="background:#080d0b;border:1px solid var(--nb-border);border-radius:12px;padding:12px">
+        <svg id="boundary-svg" viewBox="0 0 960 420" style="width:100%;height:auto;display:block"></svg>
+      </div>
+      <div style="margin-top:14px">
+        <div style="font:700 11.5px var(--nb-mono);color:var(--nb-emerald);margin-bottom:8px;display:flex;justify-content:space-between">
+          <span id="boundary-table-title">PER-FILE TRUST-BOUNDARY &amp; CROSS-BOUNDARY BRIDGE MATRIX</span>
+          <span id="boundary-table-count" style="color:var(--nb-muted)"></span>
+        </div>
+        <div style="overflow-x:auto;background:var(--nb-surface);border:1px solid var(--nb-border);border-radius:12px;max-height:290px">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Module / Directory</th>
+                <th>Source File</th>
+                <th>External [ext] Sinks</th>
+                <th>Internal [int] Sinks</th>
+                <th>Boundary Role &amp; Audit Priority</th>
+              </tr>
+            </thead>
+            <tbody id="boundary-file-rows"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <!-- SECTION 4: SESSION FORENSICS TABLE WITH SEARCH & FILTER -->
@@ -1377,26 +1402,161 @@ export function renderDashboardHtml(
     return { boundaries: { external: aggExt, internal: aggInt }, drift: aggDrift };
   }
 
+  var EXT_SINK_META = {
+    'http-in': { label: 'HTTP / API Ingress', color: '#f59e0b' },
+    'webhook-in': { label: 'Webhook / Queue Ingress', color: '#fb923c' },
+    'cli-in': { label: 'CLI / Stdin Ingress', color: '#facc15' },
+    'http-out': { label: 'Outbound HTTP / SSRF Egress', color: '#06b6d4' },
+    'ci': { label: 'CI / Supply-Chain Workflows', color: '#a855f7' }
+  };
+
+  var INT_SINK_META = {
+    'auth': { label: 'Object Auth & Sessions', color: '#10b981' },
+    'sql': { label: 'SQL / Database Queries', color: '#2dd4bf' },
+    'fs': { label: 'Filesystem & Path I/O', color: '#38bdf8' },
+    'serde': { label: 'Deserialization & Parsers', color: '#818cf8' },
+    'proc': { label: 'Subprocess / Shell Exec', color: '#fb7185' },
+    'crypto': { label: 'Cryptography & Hashing', color: '#c084fc' },
+    'env': { label: 'Secrets & Env Config', color: '#fbbf24' },
+    'ai': { label: 'LLM / Agent Context & Tools', color: '#a3e635' }
+  };
+
+  function moduleNameForFile(filePath, isAllWorkspaces) {
+    if (isAllWorkspaces) {
+      var colonIdx = filePath.indexOf(':');
+      if (colonIdx > 0) return filePath.slice(0, colonIdx);
+    }
+    var parts = filePath.split('/');
+    if (parts.length <= 1) return '(root)';
+    if (parts[0] === '.github' && parts[1] === 'workflows') return '.github/workflows';
+    if ((parts[0] === 'packages' || parts[0] === 'crates' || parts[0] === 'apps' || parts[0] === 'hooks' || parts[0] === 'src') && parts.length >= 3) {
+      return parts[0] + '/' + parts[1];
+    }
+    return parts[0];
+  }
+
+  function buildProjectTopologyModel(wsKey) {
+    var resolved = resolveBoundariesForView(wsKey);
+    var ext = resolved.boundaries.external || {};
+    var int = resolved.boundaries.internal || {};
+    var driftSet = new Set(resolved.drift || []);
+    var isAll = !wsKey;
+
+    var fileMap = {};
+    function recordEntry(rawEntry, tier) {
+      var arrow = rawEntry.indexOf('->');
+      if (arrow < 0) return;
+      var file = rawEntry.slice(0, arrow).trim();
+      var tags = rawEntry.slice(arrow + 2).split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+      if (!fileMap[file]) {
+        fileMap[file] = {
+          file: file,
+          module: moduleNameForFile(file, isAll),
+          extSinks: [],
+          intSinks: [],
+          isDrift: false
+        };
+      }
+      if (driftSet.has(rawEntry)) fileMap[file].isDrift = true;
+      tags.forEach(function(tag) {
+        if (tier === 'ext') {
+          if (fileMap[file].extSinks.indexOf(tag) < 0) fileMap[file].extSinks.push(tag);
+        } else {
+          if (fileMap[file].intSinks.indexOf(tag) < 0) fileMap[file].intSinks.push(tag);
+        }
+      });
+    }
+
+    ['ingress', 'egress', 'supply'].forEach(function(k) {
+      (ext[k] || []).forEach(function(e) { recordEntry(e, 'ext'); });
+    });
+    ['auth', 'data', 'exec', 'ai'].forEach(function(k) {
+      (int[k] || []).forEach(function(e) { recordEntry(e, 'int'); });
+    });
+
+    var files = Object.values(fileMap);
+    var extNodesMap = {};
+    var intNodesMap = {};
+    var modNodesMap = {};
+
+    files.forEach(function(f) {
+      if (!modNodesMap[f.module]) {
+        modNodesMap[f.module] = {
+          name: f.module,
+          files: [],
+          bridgeCount: 0,
+          extCounts: {},
+          intCounts: {},
+          extTotal: 0,
+          intTotal: 0
+        };
+      }
+      var mNode = modNodesMap[f.module];
+      mNode.files.push(f);
+      if (f.extSinks.length > 0 && f.intSinks.length > 0) mNode.bridgeCount += 1;
+
+      f.extSinks.forEach(function(s) {
+        if (!extNodesMap[s]) {
+          var metaInfo = EXT_SINK_META[s] || { label: s, color: '#f59e0b' };
+          extNodesMap[s] = { sink: s, label: metaInfo.label, color: metaInfo.color, files: [], modules: {} };
+        }
+        extNodesMap[s].files.push(f.file);
+        extNodesMap[s].modules[f.module] = (extNodesMap[s].modules[f.module] || 0) + 1;
+        mNode.extCounts[s] = (mNode.extCounts[s] || 0) + 1;
+        mNode.extTotal += 1;
+      });
+
+      f.intSinks.forEach(function(s) {
+        if (!intNodesMap[s]) {
+          var metaInfo = INT_SINK_META[s] || { label: s, color: '#10b981' };
+          intNodesMap[s] = { sink: s, label: metaInfo.label, color: metaInfo.color, files: [], modules: {} };
+        }
+        intNodesMap[s].files.push(f.file);
+        intNodesMap[s].modules[f.module] = (intNodesMap[s].modules[f.module] || 0) + 1;
+        mNode.intCounts[s] = (mNode.intCounts[s] || 0) + 1;
+        mNode.intTotal += 1;
+      });
+    });
+
+    var extNodes = Object.values(extNodesMap).sort(function(a, b) { return b.files.length - a.files.length; });
+    var intNodes = Object.values(intNodesMap).sort(function(a, b) { return b.files.length - a.files.length; });
+    var modNodes = Object.values(modNodesMap).sort(function(a, b) {
+      return (b.bridgeCount - a.bridgeCount) || (b.files.length - a.files.length);
+    }).slice(0, 9);
+
+    return {
+      files: files,
+      extNodes: extNodes,
+      modNodes: modNodes,
+      intNodes: intNodes,
+      drift: resolved.drift || []
+    };
+  }
+
   function renderTopology(wsKey) {
     el('topo-heading').textContent = wsKey
-      ? ('External → Internal Trust-Boundary Graph — ' + wsKey)
-      : 'External → Internal Trust-Boundary Graph — All Workspaces';
+      ? ('Per-Project Trust-Boundary & Module Architecture — ' + wsKey)
+      : 'Portfolio Trust-Boundary & Repository Topology — All Workspaces';
     var svgBox = el('boundary-svg');
     if (!svgBox) return;
     svgBox.textContent = '';
     var NS = 'http://www.w3.org/2000/svg';
     function node(tag, attrs, parent, text) {
       var n = document.createElementNS(NS, tag);
-      for (var k in attrs) n.setAttribute(k, aStr(attrs[k]));
+      for (var k in attrs) n.setAttribute(k, String(attrs[k]));
       if (text != null) n.textContent = String(text);
       if (parent) parent.appendChild(n);
       return n;
     }
-    function aStr(v) { return String(v); }
 
-    var resolved = resolveBoundariesForView(wsKey);
-    var ext = resolved.boundaries.external || {}, int = resolved.boundaries.internal || {};
-    var drift = resolved.drift || [];
+    var topo = buildProjectTopologyModel(wsKey);
+    var drift = topo.drift;
+    var bridgeFilesCount = topo.files.filter(function(f) { return f.extSinks.length > 0 && f.intSinks.length > 0; }).length;
+
+    var summaryEl = el('topo-summary');
+    if (summaryEl) {
+      summaryEl.textContent = topo.files.length + ' boundary-crossing files across ' + topo.modNodes.length + ' active ' + (wsKey ? 'project module(s)' : 'repositories') + ' · ' + topo.extNodes.length + ' active external sink type(s) · ' + topo.intNodes.length + ' active internal sink type(s) · ' + bridgeFilesCount + ' cross-boundary bridge file(s) ([ext] ➔ [int])';
+    }
 
     var driftBadge = el('ov-drift');
     if (drift.length > 0) {
@@ -1404,44 +1564,187 @@ export function renderDashboardHtml(
       driftBadge.textContent = '⚠ +' + drift.length + ' Unreviewed Boundary Drift: ' + drift.slice(0, 3).join(', ');
     } else {
       driftBadge.className = 'badge-chip';
-      driftBadge.textContent = '✓ Trust Boundaries Match Saved .neckbeard.json (' + (wsKey || 'Portfolio') + ')';
+      driftBadge.textContent = '✓ ' + topo.files.length + ' Boundary Files Mapped (' + (wsKey || 'Portfolio') + ')';
     }
 
-    node('rect', { x: 420, y: 12, width: 120, height: 336, rx: 14, fill: '#0e1913', stroke: '#10b981', 'stroke-dasharray': '6,4' }, svgBox);
-    node('text', { x: 480, y: 156, fill: '#10b981', 'font-size': 12, 'font-weight': 800, 'text-anchor': 'middle', 'font-family': 'monospace' }, svgBox, 'TRUST');
-    node('text', { x: 480, y: 174, fill: '#10b981', 'font-size': 12, 'font-weight': 800, 'text-anchor': 'middle', 'font-family': 'monospace' }, svgBox, 'BOUNDARY');
-    node('text', { x: 480, y: 196, fill: '#8b9d92', 'font-size': 9.5, 'text-anchor': 'middle', 'font-family': 'monospace' }, svgBox, wsKey || 'All Workspaces');
+    if (topo.files.length === 0) {
+      svgBox.setAttribute('viewBox', '0 0 960 140');
+      node('text', { x: 480, y: 75, fill: '#8b9d92', 'font-size': 13, 'text-anchor': 'middle', 'font-family': 'monospace' }, svgBox, 'No external or internal boundary sinks detected in ' + (wsKey || 'workspace') + '.');
+      var emptyRows = el('boundary-file-rows');
+      if (emptyRows) emptyRows.textContent = '';
+      return;
+    }
 
-    var extBoxes = [
-      ['External Ingress (HTTP/CLI/Webhook)', ext.ingress || [], '#f59e0b'],
-      ['External Egress (Outbound / SSRF)', ext.egress || [], '#06b6d4'],
-      ['Supply Chain & CI Workflows', ext.supply || [], '#a855f7']
-    ];
-    extBoxes.forEach(function(g, i) {
-      var y = 20 + i * 112;
-      node('rect', { x: 16, y: y, width: 340, height: 92, rx: 12, fill: '#0b110e', stroke: g[2] }, svgBox);
-      node('text', { x: 30, y: y + 24, fill: g[2], 'font-size': 12, 'font-weight': 700, 'font-family': 'monospace' }, svgBox, g[0] + ' (' + g[1].length + ')');
-      (g[1].length ? g[1].slice(0, 3) : ['(no sinks matched in ' + (wsKey || 'workspace') + ')']).forEach(function(item, j) {
-        node('text', { x: 30, y: y + 45 + j * 15, fill: '#ecf3ef', 'font-size': 10.5, 'font-family': 'monospace' }, svgBox, item.slice(0, 44));
-      });
-      node('path', { d: 'M356,' + (y + 46) + ' C390,' + (y + 46) + ' 390,180 420,180', fill: 'none', stroke: g[2], 'stroke-width': 1.6 }, svgBox);
+    // Dynamic vertical layout based on actual node counts per project
+    var extCount = Math.max(1, topo.extNodes.length);
+    var modCount = Math.max(1, topo.modNodes.length);
+    var intCount = Math.max(1, topo.intNodes.length);
+    var H = Math.max(320, extCount * 82 + 40, modCount * 68 + 40, intCount * 68 + 40);
+    svgBox.setAttribute('viewBox', '0 0 960 ' + H);
+
+    // Column Headers
+    node('text', { x: 20, y: 20, fill: '#f59e0b', 'font-size': 11, 'font-weight': 700, 'font-family': 'monospace' }, svgBox, 'EXTERNAL SINKS [EXT] (' + topo.extNodes.length + ' ACTIVE)');
+    node('text', { x: 480, y: 20, fill: '#10b981', 'font-size': 11, 'font-weight': 700, 'text-anchor': 'middle', 'font-family': 'monospace' }, svgBox, (wsKey ? (wsKey.toUpperCase() + ' ARCHITECTURE MODULES') : 'ACTIVE REPOSITORY MODULES') + ' (' + topo.modNodes.length + ')');
+    node('text', { x: 940, y: 20, fill: '#06b6d4', 'font-size': 11, 'font-weight': 700, 'text-anchor': 'end', 'font-family': 'monospace' }, svgBox, 'INTERNAL SINKS [INT] (' + topo.intNodes.length + ' ACTIVE)');
+
+    var wm = wsKey ? (meta[wsKey] || {}) : {};
+    var bLoad = wm.boundaryLoad || {};
+
+    // Compute Y positions for each column so nodes distribute evenly across the dynamic height
+    var extPos = {};
+    var extStep = (H - 46) / Math.max(1, topo.extNodes.length);
+    topo.extNodes.forEach(function(en, idx) {
+      var bh = Math.min(76, Math.max(52, extStep - 10));
+      var by = Math.round(36 + idx * extStep + (extStep - bh) / 2);
+      extPos[en.sink] = { x: 18, y: by, w: 256, h: bh, cy: by + Math.round(bh / 2), color: en.color };
     });
 
-    var intBoxes = [
-      ['Internal Auth & Object Ownership', int.auth || [], '#10b981'],
-      ['Internal Data & Storage (SQL/FS)', int.data || [], '#2dd4bf'],
-      ['Internal Execution & Crypto', int.exec || [], '#fb7185'],
-      ['Internal AI & Prompt Context', int.ai || [], '#facc15']
-    ];
-    intBoxes.forEach(function(g, i) {
-      var y = 14 + i * 84;
-      node('rect', { x: 604, y: y, width: 340, height: 72, rx: 12, fill: '#0b110e', stroke: g[2] }, svgBox);
-      node('text', { x: 618, y: y + 21, fill: g[2], 'font-size': 11.5, 'font-weight': 700, 'font-family': 'monospace' }, svgBox, g[0] + ' (' + g[1].length + ')');
-      (g[1].length ? g[1].slice(0, 2) : ['(no sinks matched in ' + (wsKey || 'workspace') + ')']).forEach(function(item, j) {
-        node('text', { x: 618, y: y + 40 + j * 15, fill: '#ecf3ef', 'font-size': 10.5, 'font-family': 'monospace' }, svgBox, item.slice(0, 44));
-      });
-      node('path', { d: 'M540,180 C572,180 572,' + (y + 36) + ' 604,' + (y + 36), fill: 'none', stroke: g[2], 'stroke-width': 1.6 }, svgBox);
+    var modPos = {};
+    var modStep = (H - 46) / Math.max(1, topo.modNodes.length);
+    topo.modNodes.forEach(function(mn, idx) {
+      var bh = Math.min(72, Math.max(48, modStep - 8));
+      var by = Math.round(36 + idx * modStep + (modStep - bh) / 2);
+      modPos[mn.name] = { x: 344, y: by, w: 272, h: bh, cy: by + Math.round(bh / 2) };
     });
+
+    var intPos = {};
+    var intStep = (H - 46) / Math.max(1, topo.intNodes.length);
+    topo.intNodes.forEach(function(inNode, idx) {
+      var bh = Math.min(72, Math.max(48, intStep - 8));
+      var by = Math.round(36 + idx * intStep + (intStep - bh) / 2);
+      intPos[inNode.sink] = { x: 686, y: by, w: 256, h: bh, cy: by + Math.round(bh / 2), color: inNode.color };
+    });
+
+    // 1. Draw Real Edges FIRST (External Sink -> Project Module, and Project Module -> Internal Sink)
+    topo.extNodes.forEach(function(en) {
+      var ep = extPos[en.sink];
+      Object.keys(en.modules).forEach(function(mName) {
+        var mp = modPos[mName];
+        if (!ep || !mp) return;
+        var count = en.modules[mName];
+        var sw = Math.min(4.5, 1.3 + count * 0.65);
+        node('path', {
+          d: 'M' + (ep.x + ep.w) + ',' + ep.cy + ' C305,' + ep.cy + ' 308,' + mp.cy + ' ' + mp.x + ',' + mp.cy,
+          fill: 'none',
+          stroke: ep.color,
+          'stroke-width': sw,
+          'stroke-opacity': '0.72'
+        }, svgBox);
+      });
+    });
+
+    topo.modNodes.forEach(function(mn) {
+      var mp = modPos[mn.name];
+      if (!mp) return;
+      Object.keys(mn.intCounts).forEach(function(sKey) {
+        var ip = intPos[sKey];
+        if (!ip) return;
+        var count = mn.intCounts[sKey];
+        var sw = Math.min(4.5, 1.3 + count * 0.55);
+        node('path', {
+          d: 'M' + (mp.x + mp.w) + ',' + mp.cy + ' C648,' + mp.cy + ' 652,' + ip.cy + ' ' + ip.x + ',' + ip.cy,
+          fill: 'none',
+          stroke: ip.color,
+          'stroke-width': sw,
+          'stroke-opacity': '0.72'
+        }, svgBox);
+      });
+    });
+
+    // 2. Render Layer 1 Nodes: Active External Sinks [ext]
+    topo.extNodes.forEach(function(en) {
+      var ep = extPos[en.sink];
+      node('rect', { x: ep.x, y: ep.y, width: ep.w, height: ep.h, rx: 10, fill: '#0b110e', stroke: ep.color, 'stroke-width': 1.5 }, svgBox);
+      node('text', { x: ep.x + 12, y: ep.y + 19, fill: ep.color, 'font-size': 11.5, 'font-weight': 700, 'font-family': 'monospace' }, svgBox, '[' + en.sink + '] ' + en.label);
+      var loadTag = bLoad[en.sink] ? (' · ' + bLoad[en.sink]) : '';
+      node('text', { x: ep.x + 12, y: ep.y + 35, fill: '#ecf3ef', 'font-size': 10, 'font-family': 'monospace' }, svgBox, en.files.length + ' file(s) across ' + Object.keys(en.modules).length + ' mod(s)' + loadTag);
+      if (ep.h >= 62 && en.files[0]) {
+        node('text', { x: ep.x + 12, y: ep.y + 50, fill: '#8b9d92', 'font-size': 9.5, 'font-family': 'monospace' }, svgBox, 'e.g. ' + en.files[0].slice(-28));
+      }
+    });
+
+    // 3. Render Layer 2 Nodes: Project Architecture Modules (Center Column)
+    topo.modNodes.forEach(function(mn) {
+      var mp = modPos[mn.name];
+      var isBridgeMod = mn.bridgeCount > 0;
+      var borderCol = isBridgeMod ? '#10b981' : '#2b3d34';
+      node('rect', {
+        x: mp.x,
+        y: mp.y,
+        width: mp.w,
+        height: mp.h,
+        rx: 10,
+        fill: isBridgeMod ? '#0e1913' : '#0b110e',
+        stroke: borderCol,
+        'stroke-width': isBridgeMod ? 1.8 : 1.2
+      }, svgBox);
+
+      var badgeTxt = isBridgeMod ? (' ⚡ ' + mn.bridgeCount + ' bridge') : '';
+      node('text', { x: mp.x + 12, y: mp.y + 18, fill: isBridgeMod ? '#10b981' : '#ecf3ef', 'font-size': 11.5, 'font-weight': 700, 'font-family': 'monospace' }, svgBox, mn.name.slice(0, 24) + ' (' + mn.files.length + ')' + badgeTxt);
+
+      var extList = Object.keys(mn.extCounts).join(',');
+      var intList = Object.keys(mn.intCounts).join(',');
+      var flowSummary = (extList ? ('in:' + extList + ' ') : '') + (intList ? ('-> ' + intList) : '');
+      node('text', { x: mp.x + 12, y: mp.y + 34, fill: '#8b9d92', 'font-size': 9.8, 'font-family': 'monospace' }, svgBox, flowSummary.slice(0, 38));
+
+      if (mp.h >= 58 && mn.files[0]) {
+        var sampleNames = mn.files.slice(0, 2).map(function(f) { return f.file.split('/').pop(); }).join(', ');
+        node('text', { x: mp.x + 12, y: mp.y + 48, fill: '#ecf3ef', 'font-size': 9.5, 'font-family': 'monospace' }, svgBox, sampleNames.slice(0, 38));
+      }
+    });
+
+    // 4. Render Layer 3 Nodes: Active Internal Sinks [int]
+    topo.intNodes.forEach(function(inNode) {
+      var ip = intPos[inNode.sink];
+      node('rect', { x: ip.x, y: ip.y, width: ip.w, height: ip.h, rx: 10, fill: '#0b110e', stroke: ip.color, 'stroke-width': 1.5 }, svgBox);
+      node('text', { x: ip.x + 12, y: ip.y + 19, fill: ip.color, 'font-size': 11.5, 'font-weight': 700, 'font-family': 'monospace' }, svgBox, '[' + inNode.sink + '] ' + inNode.label);
+      node('text', { x: ip.x + 12, y: ip.y + 35, fill: '#ecf3ef', 'font-size': 10, 'font-family': 'monospace' }, svgBox, inNode.files.length + ' file(s) from ' + Object.keys(inNode.modules).length + ' mod(s)');
+      if (ip.h >= 58 && inNode.files[0]) {
+        node('text', { x: ip.x + 12, y: ip.y + 49, fill: '#8b9d92', 'font-size': 9.5, 'font-family': 'monospace' }, svgBox, 'e.g. ' + inNode.files[0].slice(-28));
+      }
+    });
+
+    // 5. Populate Per-File Boundary & Cross-Boundary Bridge Matrix Table
+    var tblTitle = el('boundary-table-title');
+    var tblCnt = el('boundary-table-count');
+    if (tblTitle) tblTitle.textContent = 'PER-FILE TRUST-BOUNDARY & BRIDGE MATRIX — ' + (wsKey || 'ALL WORKSPACES').toUpperCase();
+    if (tblCnt) tblCnt.textContent = topo.files.length + ' boundary files (' + bridgeFilesCount + ' cross-boundary bridges)';
+
+    var bRows = el('boundary-file-rows');
+    if (bRows) {
+      bRows.textContent = '';
+      topo.files.slice().sort(function(a, b) {
+        var aBridge = (a.extSinks.length > 0 && a.intSinks.length > 0) ? 1 : 0;
+        var bBridge = (b.extSinks.length > 0 && b.intSinks.length > 0) ? 1 : 0;
+        if (bBridge !== aBridge) return bBridge - aBridge;
+        return (b.extSinks.length + b.intSinks.length) - (a.extSinks.length + a.intSinks.length);
+      }).slice(0, 60).forEach(function(f) {
+        var tr = document.createElement('tr');
+        var isBridge = f.extSinks.length > 0 && f.intSinks.length > 0;
+        var totalSinks = f.extSinks.length + f.intSinks.length;
+        var roleLabel = f.isDrift
+          ? '⚠ Unreviewed Drift (+new)'
+          : isBridge
+            ? '⚡ Cross-Boundary Bridge ([ext] ➔ [int])'
+            : totalSinks >= 2
+              ? '🛡️ Multi-Sink Hub (' + totalSinks + ' sinks)'
+              : '● Single-Sink Boundary';
+        [
+          f.module,
+          f.file,
+          f.extSinks.length ? f.extSinks.map(function(s) { return '[' + s + ']'; }).join(' ') : '–',
+          f.intSinks.length ? f.intSinks.map(function(s) { return '[' + s + ']'; }).join(' ') : '–',
+          roleLabel
+        ].forEach(function(val, idx) {
+          var td = document.createElement('td');
+          if (idx === 1) td.className = 'task-col';
+          if (idx === 4 && isBridge) td.style.color = 'var(--nb-amber)';
+          td.textContent = val;
+          tr.appendChild(td);
+        });
+        bRows.appendChild(tr);
+      });
+    }
   }
 
   function render() {

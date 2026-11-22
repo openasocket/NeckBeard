@@ -15,7 +15,7 @@ const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 680);
 const MAX_FILES = 3000;
 const MAX_BYTES = 200 * 1024;
 const SRC = /\.(py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|java|kt|php|cs|swift|sh|yml|yaml)$/;
-const SKIP = /(^|\/)(node_modules|vendor|dist|build|out|target|coverage|\.next|\.venv|venv|__pycache__|tests?|__tests__|spec|fixtures|migrations)(\/|$)|\.(test|spec|min|d)\.[a-z]+$/;
+const SKIP = /(^|\/)(node_modules|vendor|dist|build|out|target|coverage|\.next|\.venv|venv|__pycache__|\.claude|\.worktrees|tests?|__tests__|spec|fixtures|migrations)(\/|$)|\.(test|spec|min|d)\.[a-z]+$/;
 const SAFE_PATH = /^[\w.@+\/-]+$/; // a path with odd characters is skipped, never echoed
 
 const CATEGORIES = [
@@ -97,11 +97,12 @@ function buildSurface(root) {
 }
 
 // Builds the concise two-tier (external & internal) trust-boundary map for a project.
-function buildBoundaryMap(root = process.cwd()) {
+function buildBoundaryMap(root = process.cwd(), maxPerCategory = 6) {
   const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
   const ext = { ingress: [], egress: [], supply: [] };
   const int = { auth: [], data: [], exec: [], ai: [] };
-  const add = (arr, item) => { if (arr.length < 6 && !arr.includes(item)) arr.push(item); };
+  const limit = Math.max(1, Number(maxPerCategory) || 6);
+  const add = (arr, item) => { if (arr.length < limit && !arr.includes(item)) arr.push(item); };
 
   for (const f of files) {
     if (/^\.github\/workflows\/.+\.(?:yml|yaml)$/.test(f)) {

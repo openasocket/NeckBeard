@@ -379,8 +379,36 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     </section>
 
     <section class="card-sec" id="pane-overview">
-      <div class="sec-head"><h2 id="topo-heading">External → Internal Trust-Boundary Graph</h2><span id="ov-drift" class="chip">✓ Baseline Verified</span></div>
-      <svg id="boundary-svg" viewBox="0 0 960 360" style="width:100%;height:auto;display:block"></svg>
+      <div class="sec-head">
+        <div>
+          <h2 id="topo-heading">External → Project Modules → Internal Trust-Boundary Graph</h2>
+          <div id="topo-summary" style="font:400 12px var(--mono);color:var(--muted);margin-top:3px"></div>
+        </div>
+        <span id="ov-drift" class="chip">✓ Baseline Verified</span>
+      </div>
+      <div style="background:#080d0b;border:1px solid var(--border);border-radius:12px;padding:12px">
+        <svg id="boundary-svg" viewBox="0 0 960 420" style="width:100%;height:auto;display:block"></svg>
+      </div>
+      <div style="margin-top:14px">
+        <div style="font:700 11.5px var(--mono);color:var(--emerald);margin-bottom:8px;display:flex;justify-content:space-between">
+          <span id="boundary-table-title">PER-FILE TRUST-BOUNDARY &amp; CROSS-BOUNDARY BRIDGE MATRIX</span>
+          <span id="boundary-table-count" style="color:var(--muted)"></span>
+        </div>
+        <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:290px">
+          <table>
+            <thead>
+              <tr>
+                <th>Module / Directory</th>
+                <th>Source File</th>
+                <th>External [ext] Sinks</th>
+                <th>Internal [int] Sinks</th>
+                <th>Boundary Role &amp; Audit Priority</th>
+              </tr>
+            </thead>
+            <tbody id="boundary-file-rows"></tbody>
+          </table>
+        </div>
+      </div>
     </section>
     <section class="card-sec" id="pane-forensics">
       <div class="sec-head">
@@ -713,33 +741,152 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     });
     return{boundaries:{external:aE,internal:aI},drift:aD};
   }
+  var EXT_META={'http-in':{label:'HTTP / API Ingress',color:'#f59e0b'},'webhook-in':{label:'Webhook / Queue Ingress',color:'#fb923c'},'cli-in':{label:'CLI / Stdin Ingress',color:'#facc15'},'http-out':{label:'Outbound HTTP / SSRF Egress',color:'#06b6d4'},'ci':{label:'CI / Supply-Chain Workflows',color:'#a855f7'}};
+  var INT_META={'auth':{label:'Object Auth & Sessions',color:'#10b981'},'sql':{label:'SQL / Database Queries',color:'#2dd4bf'},'fs':{label:'Filesystem & Path I/O',color:'#38bdf8'},'serde':{label:'Deserialization & Parsers',color:'#818cf8'},'proc':{label:'Subprocess / Shell Exec',color:'#fb7185'},'crypto':{label:'Cryptography & Hashing',color:'#c084fc'},'env':{label:'Secrets & Env Config',color:'#fbbf24'},'ai':{label:'LLM / Agent Context & Tools',color:'#a3e635'}};
+  function modNameFor(fp,isAll){
+    if(isAll){var ci=fp.indexOf(':');if(ci>0)return fp.slice(0,ci)}
+    var ps=fp.split('/');if(ps.length<=1)return'(root)';
+    if(ps[0]==='.github'&&ps[1]==='workflows')return'.github/workflows';
+    if((ps[0]==='packages'||ps[0]==='crates'||ps[0]==='apps'||ps[0]==='hooks'||ps[0]==='src')&&ps.length>=3)return ps[0]+'/'+ps[1];
+    return ps[0];
+  }
+  function buildTopoModel(wsKey){
+    var res=resolveBounds(wsKey),ext=res.boundaries.external||{},int=res.boundaries.internal||{},dSet=new Set(res.drift||[]),isAll=!wsKey,fMap={};
+    function rec(raw,tier){
+      var ar=raw.indexOf('->');if(ar<0)return;
+      var file=raw.slice(0,ar).trim(),tags=raw.slice(ar+2).split(',').map(function(t){return t.trim()}).filter(Boolean);
+      if(!fMap[file])fMap[file]={file:file,module:modNameFor(file,isAll),extSinks:[],intSinks:[],isDrift:false};
+      if(dSet.has(raw))fMap[file].isDrift=true;
+      tags.forEach(function(tag){
+        if(tier==='ext'){if(fMap[file].extSinks.indexOf(tag)<0)fMap[file].extSinks.push(tag)}
+        else{if(fMap[file].intSinks.indexOf(tag)<0)fMap[file].intSinks.push(tag)}
+      });
+    }
+    ['ingress','egress','supply'].forEach(function(k){(ext[k]||[]).forEach(function(e){rec(e,'ext')})});
+    ['auth','data','exec','ai'].forEach(function(k){(int[k]||[]).forEach(function(e){rec(e,'int')})});
+    var files=Object.values(fMap),eMap={},iMap={},mMap={};
+    files.forEach(function(f){
+      if(!mMap[f.module])mMap[f.module]={name:f.module,files:[],bridgeCount:0,extCounts:{},intCounts:{}};
+      var mn=mMap[f.module];mn.files.push(f);
+      if(f.extSinks.length>0&&f.intSinks.length>0)mn.bridgeCount+=1;
+      f.extSinks.forEach(function(s){
+        if(!eMap[s]){var mi=EXT_META[s]||{label:s,color:'#f59e0b'};eMap[s]={sink:s,label:mi.label,color:mi.color,files:[],modules:{}}}
+        eMap[s].files.push(f.file);eMap[s].modules[f.module]=(eMap[s].modules[f.module]||0)+1;mn.extCounts[s]=(mn.extCounts[s]||0)+1;
+      });
+      f.intSinks.forEach(function(s){
+        if(!iMap[s]){var mi=INT_META[s]||{label:s,color:'#10b981'};iMap[s]={sink:s,label:mi.label,color:mi.color,files:[],modules:{}}}
+        iMap[s].files.push(f.file);iMap[s].modules[f.module]=(iMap[s].modules[f.module]||0)+1;mn.intCounts[s]=(mn.intCounts[s]||0)+1;
+      });
+    });
+    return{
+      files:files,
+      extNodes:Object.values(eMap).sort(function(a,b){return b.files.length-a.files.length}),
+      modNodes:Object.values(mMap).sort(function(a,b){return(b.bridgeCount-a.bridgeCount)||(b.files.length-a.files.length)}).slice(0,9),
+      intNodes:Object.values(iMap).sort(function(a,b){return b.files.length-a.files.length}),
+      drift:res.drift||[]
+    };
+  }
   function renderGraph(wsKey){
-    el('topo-heading').textContent=wsKey?('External → Internal Trust-Boundary Graph — '+wsKey):'External → Internal Trust-Boundary Graph — All Workspaces';
+    el('topo-heading').textContent=wsKey?('Per-Project Trust-Boundary & Module Architecture — '+wsKey):'Portfolio Trust-Boundary & Repository Topology — All Workspaces';
     var box=el('boundary-svg');if(!box)return;box.textContent='';
     var NS='http://www.w3.org/2000/svg';
     function node(t,a,p,txt){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,String(a[k]));if(txt!=null)n.textContent=String(txt);if(p)p.appendChild(n);return n}
-    var res=resolveBounds(wsKey),ext=res.boundaries.external||{},int=res.boundaries.internal||{},drift=res.drift||[];
+    var topo=buildTopoModel(wsKey),drift=topo.drift,bCnt=topo.files.filter(function(f){return f.extSinks.length>0&&f.intSinks.length>0}).length;
+    var sumEl=el('topo-summary');
+    if(sumEl)sumEl.textContent=topo.files.length+' boundary-crossing files across '+topo.modNodes.length+' active '+(wsKey?'project module(s)':'repositories')+' · '+topo.extNodes.length+' active external sink type(s) · '+topo.intNodes.length+' active internal sink type(s) · '+bCnt+' cross-boundary bridge file(s) ([ext] ➔ [int])';
     var db=el('ov-drift');
     if(drift.length){db.className='chip warn';db.textContent='⚠ +'+drift.length+' Unreviewed Boundary Drift: '+drift.slice(0,3).join(', ')}
-    else{db.className='chip';db.textContent='✓ Trust Boundaries Match Saved .neckbeard.json ('+(wsKey||'Portfolio')+')'}
-    node('rect',{x:420,y:12,width:120,height:336,rx:14,fill:'#0e1913',stroke:'#10b981','stroke-dasharray':'6,4'},box);
-    node('text',{x:480,y:156,fill:'#10b981','font-size':12,'font-weight':800,'text-anchor':'middle','font-family':'monospace'},box,'TRUST');
-    node('text',{x:480,y:174,fill:'#10b981','font-size':12,'font-weight':800,'text-anchor':'middle','font-family':'monospace'},box,'BOUNDARY');
-    node('text',{x:480,y:196,fill:'#8b9d92','font-size':9.5,'text-anchor':'middle','font-family':'monospace'},box,wsKey||'All Workspaces');
-    [['External Ingress (HTTP/CLI/Webhook)',ext.ingress||[],'#f59e0b'],['External Egress (Outbound / SSRF)',ext.egress||[],'#06b6d4'],['Supply Chain & CI Workflows',ext.supply||[],'#a855f7']].forEach(function(g,i){
-      var y=20+i*112;
-      node('rect',{x:16,y:y,width:340,height:92,rx:12,fill:'#0b110e',stroke:g[2]},box);
-      node('text',{x:30,y:y+24,fill:g[2],'font-size':12,'font-weight':700,'font-family':'monospace'},box,g[0]+' ('+g[1].length+')');
-      (g[1].length?g[1].slice(0,3):['(no sinks matched in '+(wsKey||'workspace')+')']).forEach(function(it,j){node('text',{x:30,y:y+45+j*15,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},box,it.slice(0,44))});
-      node('path',{d:'M356,'+(y+46)+' C390,'+(y+46)+' 390,180 420,180',fill:'none',stroke:g[2],'stroke-width':1.6},box);
+    else{db.className='chip';db.textContent='✓ '+topo.files.length+' Boundary Files Mapped ('+(wsKey||'Portfolio')+')'}
+    if(topo.files.length===0){
+      box.setAttribute('viewBox','0 0 960 140');
+      node('text',{x:480,y:75,fill:'#8b9d92','font-size':13,'text-anchor':'middle','font-family':'monospace'},box,'No external or internal boundary sinks detected in '+(wsKey||'workspace')+'.');
+      var er=el('boundary-file-rows');if(er)er.textContent='';return;
+    }
+    var eC=Math.max(1,topo.extNodes.length),mC=Math.max(1,topo.modNodes.length),iC=Math.max(1,topo.intNodes.length);
+    var H=Math.max(320,eC*82+40,mC*68+40,iC*68+40);
+    box.setAttribute('viewBox','0 0 960 '+H);
+    node('text',{x:20,y:20,fill:'#f59e0b','font-size':11,'font-weight':700,'font-family':'monospace'},box,'EXTERNAL SINKS [EXT] ('+topo.extNodes.length+' ACTIVE)');
+    node('text',{x:480,y:20,fill:'#10b981','font-size':11,'font-weight':700,'text-anchor':'middle','font-family':'monospace'},box,(wsKey?(wsKey.toUpperCase()+' ARCHITECTURE MODULES'):'ACTIVE REPOSITORY MODULES')+' ('+topo.modNodes.length+')');
+    node('text',{x:940,y:20,fill:'#06b6d4','font-size':11,'font-weight':700,'text-anchor':'end','font-family':'monospace'},box,'INTERNAL SINKS [INT] ('+topo.intNodes.length+' ACTIVE)');
+    var wm=wsKey?(meta[wsKey]||{}):{},bLoad=wm.boundaryLoad||{};
+    var extPos={},eStep=(H-46)/Math.max(1,topo.extNodes.length);
+    topo.extNodes.forEach(function(en,idx){
+      var bh=Math.min(76,Math.max(52,eStep-10)),by=Math.round(36+idx*eStep+(eStep-bh)/2);
+      extPos[en.sink]={x:18,y:by,w:256,h:bh,cy:by+Math.round(bh/2),color:en.color};
     });
-    [['Internal Auth & Object Ownership',int.auth||[],'#10b981'],['Internal Data & Storage (SQL/FS)',int.data||[],'#2dd4bf'],['Internal Execution & Crypto',int.exec||[],'#fb7185'],['Internal AI & Prompt Context',int.ai||[],'#facc15']].forEach(function(g,i){
-      var y=14+i*84;
-      node('rect',{x:604,y:y,width:340,height:72,rx:12,fill:'#0b110e',stroke:g[2]},box);
-      node('text',{x:618,y:y+21,fill:g[2],'font-size':11.5,'font-weight':700,'font-family':'monospace'},box,g[0]+' ('+g[1].length+')');
-      (g[1].length?g[1].slice(0,2):['(no sinks matched in '+(wsKey||'workspace')+')']).forEach(function(it,j){node('text',{x:618,y:y+40+j*15,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},box,it.slice(0,44))});
-      node('path',{d:'M540,180 C572,180 572,'+(y+36)+' 604,'+(y+36),fill:'none',stroke:g[2],'stroke-width':1.6},box);
+    var modPos={},mStep=(H-46)/Math.max(1,topo.modNodes.length);
+    topo.modNodes.forEach(function(mn,idx){
+      var bh=Math.min(72,Math.max(48,mStep-8)),by=Math.round(36+idx*mStep+(mStep-bh)/2);
+      modPos[mn.name]={x:344,y:by,w:272,h:bh,cy:by+Math.round(bh/2)};
     });
+    var intPos={},iStep=(H-46)/Math.max(1,topo.intNodes.length);
+    topo.intNodes.forEach(function(inN,idx){
+      var bh=Math.min(72,Math.max(48,iStep-8)),by=Math.round(36+idx*iStep+(iStep-bh)/2);
+      intPos[inN.sink]={x:686,y:by,w:256,h:bh,cy:by+Math.round(bh/2),color:inN.color};
+    });
+    topo.extNodes.forEach(function(en){
+      var ep=extPos[en.sink];
+      Object.keys(en.modules).forEach(function(mName){
+        var mp=modPos[mName];if(!ep||!mp)return;
+        var sw=Math.min(4.5,1.3+en.modules[mName]*0.65);
+        node('path',{d:'M'+(ep.x+ep.w)+','+ep.cy+' C305,'+ep.cy+' 308,'+mp.cy+' '+mp.x+','+mp.cy,fill:'none',stroke:ep.color,'stroke-width':sw,'stroke-opacity':'0.72'},box);
+      });
+    });
+    topo.modNodes.forEach(function(mn){
+      var mp=modPos[mn.name];if(!mp)return;
+      Object.keys(mn.intCounts).forEach(function(sKey){
+        var ip=intPos[sKey];if(!ip)return;
+        var sw=Math.min(4.5,1.3+mn.intCounts[sKey]*0.55);
+        node('path',{d:'M'+(mp.x+mp.w)+','+mp.cy+' C648,'+mp.cy+' 652,'+ip.cy+' '+ip.x+','+ip.cy,fill:'none',stroke:ip.color,'stroke-width':sw,'stroke-opacity':'0.72'},box);
+      });
+    });
+    topo.extNodes.forEach(function(en){
+      var ep=extPos[en.sink];
+      node('rect',{x:ep.x,y:ep.y,width:ep.w,height:ep.h,rx:10,fill:'#0b110e',stroke:ep.color,'stroke-width':1.5},box);
+      node('text',{x:ep.x+12,y:ep.y+19,fill:ep.color,'font-size':11.5,'font-weight':700,'font-family':'monospace'},box,'['+en.sink+'] '+en.label);
+      var lt=bLoad[en.sink]?(' · '+bLoad[en.sink]):'';
+      node('text',{x:ep.x+12,y:ep.y+35,fill:'#ecf3ef','font-size':10,'font-family':'monospace'},box,en.files.length+' file(s) across '+Object.keys(en.modules).length+' mod(s)'+lt);
+      if(ep.h>=62&&en.files[0])node('text',{x:ep.x+12,y:ep.y+50,fill:'#8b9d92','font-size':9.5,'font-family':'monospace'},box,'e.g. '+en.files[0].slice(-28));
+    });
+    topo.modNodes.forEach(function(mn){
+      var mp=modPos[mn.name],isB=mn.bridgeCount>0;
+      node('rect',{x:mp.x,y:mp.y,width:mp.w,height:mp.h,rx:10,fill:isB?'#0e1913':'#0b110e',stroke:isB?'#10b981':'#2b3d34','stroke-width':isB?1.8:1.2},box);
+      var bt=isB?(' ⚡ '+mn.bridgeCount+' bridge'):'';
+      node('text',{x:mp.x+12,y:mp.y+18,fill:isB?'#10b981':'#ecf3ef','font-size':11.5,'font-weight':700,'font-family':'monospace'},box,mn.name.slice(0,24)+' ('+mn.files.length+')'+bt);
+      var eL=Object.keys(mn.extCounts).join(','),iL=Object.keys(mn.intCounts).join(',');
+      var fs=(eL?('in:'+eL+' '):'')+(iL?('-> '+iL):'');
+      node('text',{x:mp.x+12,y:mp.y+34,fill:'#8b9d92','font-size':9.8,'font-family':'monospace'},box,fs.slice(0,38));
+      if(mp.h>=58&&mn.files[0]){
+        var sn=mn.files.slice(0,2).map(function(f){return f.file.split('/').pop()}).join(', ');
+        node('text',{x:mp.x+12,y:mp.y+48,fill:'#ecf3ef','font-size':9.5,'font-family':'monospace'},box,sn.slice(0,38));
+      }
+    });
+    topo.intNodes.forEach(function(inN){
+      var ip=intPos[inN.sink];
+      node('rect',{x:ip.x,y:ip.y,width:ip.w,height:ip.h,rx:10,fill:'#0b110e',stroke:ip.color,'stroke-width':1.5},box);
+      node('text',{x:ip.x+12,y:ip.y+19,fill:ip.color,'font-size':11.5,'font-weight':700,'font-family':'monospace'},box,'['+inN.sink+'] '+inN.label);
+      node('text',{x:ip.x+12,y:ip.y+35,fill:'#ecf3ef','font-size':10,'font-family':'monospace'},box,inN.files.length+' file(s) from '+Object.keys(inN.modules).length+' mod(s)');
+      if(ip.h>=58&&inN.files[0])node('text',{x:ip.x+12,y:ip.y+49,fill:'#8b9d92','font-size':9.5,'font-family':'monospace'},box,'e.g. '+inN.files[0].slice(-28));
+    });
+    var tTitle=el('boundary-table-title'),tCnt=el('boundary-table-count');
+    if(tTitle)tTitle.textContent='PER-FILE TRUST-BOUNDARY & BRIDGE MATRIX — '+(wsKey||'ALL WORKSPACES').toUpperCase();
+    if(tCnt)tCnt.textContent=topo.files.length+' boundary files ('+bCnt+' cross-boundary bridges)';
+    var bRows=el('boundary-file-rows');
+    if(bRows){
+      bRows.textContent='';
+      topo.files.slice().sort(function(a,b){
+        var aB=(a.extSinks.length>0&&a.intSinks.length>0)?1:0,bB=(b.extSinks.length>0&&b.intSinks.length>0)?1:0;
+        if(bB!==aB)return bB-aB;
+        return(b.extSinks.length+b.intSinks.length)-(a.extSinks.length+a.intSinks.length);
+      }).slice(0,60).forEach(function(f){
+        var tr=document.createElement('tr'),isB=f.extSinks.length>0&&f.intSinks.length>0,tot=f.extSinks.length+f.intSinks.length;
+        var rl=f.isDrift?'⚠ Unreviewed Drift (+new)':isB?'⚡ Cross-Boundary Bridge ([ext] ➔ [int])':tot>=2?('🛡️ Multi-Sink Hub ('+tot+' sinks)'):'● Single-Sink Boundary';
+        [f.module,f.file,f.extSinks.length?f.extSinks.map(function(s){return'['+s+']'}).join(' '):'–',f.intSinks.length?f.intSinks.map(function(s){return'['+s+']'}).join(' '):'–',rl].forEach(function(val,idx){
+          var td=document.createElement('td');if(idx===1)td.className='tcol';if(idx===4&&isB)td.style.color='var(--amber)';td.textContent=val;tr.appendChild(td);
+        });
+        bRows.appendChild(tr);
+      });
+    }
   }
   function render(){
     var list=activeWorkspace?records.filter(function(r){return r.projectName===activeWorkspace}):records;
@@ -983,7 +1130,7 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
 
     let bounds = (wsCfg && wsCfg.boundaries) || null;
     if (!bounds && canScanBounds) {
-      bounds = buildBoundaryMap(wsPath);
+      bounds = buildBoundaryMap(wsPath, 16);
       boundaryScans++;
     }
     const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };

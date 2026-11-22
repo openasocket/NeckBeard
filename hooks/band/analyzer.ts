@@ -299,6 +299,8 @@ export function serializeSessionRecord(state: NeckbeardHudState, startedAtMs: nu
     startedAtMs,
     projectName: state.projectName,
     taskTitle: state.taskTitle || 'Interactive session',
+    fullPrompt: state.fullPrompt || state.taskTitle || '',
+    assistantSummary: state.assistantSummary || '',
     sessionId: state.sessionId,
     activeLevel: state.activeLevel,
     modelId: state.modelId,

@@ -17,6 +17,8 @@ export type TelemetrySessionRecord = {
   startedAtMs: number
   projectName: string
   taskTitle: string
+  fullPrompt?: string
+  assistantSummary?: string
   sessionId: string
   activeLevel: string
   modelId: string
@@ -50,6 +52,8 @@ export type NeckbeardHudState = {
   tokenBuckets: TokenBuckets
   activeDurationMs: number
   taskTitle: string
+  fullPrompt?: string
+  assistantSummary?: string
   projectName: string
   sessionId: string
   transcriptPath: string

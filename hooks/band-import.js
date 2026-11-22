@@ -115,6 +115,7 @@ function parseJsonlSessionFile(filePath) {
   let workspaceCwd = '';
   let sessionTitle = '';
   let firstPrompt = '';
+  const userPrompts = [];
   let lastAssistantText = '';
   let explicitCostUsd = null;
   let startedAtMs = null;
@@ -161,8 +162,10 @@ function parseJsonlSessionFile(filePath) {
         : Array.isArray(msgContent)
           ? ((msgContent.find((b) => b && b.type === 'text') || {}).text || '')
           : '';
-      if (textPart && !firstPrompt && !textPart.trim().startsWith('<') && !textPart.trim().startsWith('/')) {
-        firstPrompt = textPart.trim().slice(0, 4096);
+      if (textPart && !textPart.trim().startsWith('<') && !textPart.trim().startsWith('/')) {
+        const cleanPrompt = textPart.trim().slice(0, 2400);
+        if (!firstPrompt) firstPrompt = cleanPrompt;
+        if (userPrompts.length < 3) userPrompts.push(cleanPrompt);
       }
       const isToolResult = Array.isArray(msgContent) && msgContent.some((b) => b && b.type === 'tool_result');
       if (!isToolResult) turnCount++;
@@ -172,9 +175,9 @@ function parseJsonlSessionFile(filePath) {
       const { id, model, usage, content: aContent } = entry.message;
       if (Array.isArray(aContent)) {
         const txtBlock = aContent.find((b) => b && b.type === 'text' && typeof b.text === 'string' && b.text.trim());
-        if (txtBlock) lastAssistantText = txtBlock.text.trim().slice(0, 512);
+        if (txtBlock) lastAssistantText = txtBlock.text.trim().slice(0, 1200);
       } else if (typeof aContent === 'string' && aContent.trim()) {
-        lastAssistantText = aContent.trim().slice(0, 512);
+        lastAssistantText = aContent.trim().slice(0, 1200);
       }
       modelCounts[model] = (modelCounts[model] || 0) + 1;
       if (id && usage && !seenMsgIds.has(id)) {
@@ -194,10 +197,14 @@ function parseJsonlSessionFile(filePath) {
   const primaryModel = models.sort((a, b) => modelCounts[b] - modelCounts[a])[0];
   const totalCostUsd = explicitCostUsd !== null ? Math.max(explicitCostUsd, estimatedCostUsd) : estimatedCostUsd;
 
+  const redactSecrets = (s) => String(s || '').replace(/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|npm_[A-Za-z0-9]{20,})\b/g, '[REDACTED]');
+
   return {
     workspaceCwd,
     startedAtMs,
     taskTitle: extractSessionTaskTitle(sessionTitle, firstPrompt, lastAssistantText),
+    fullPrompt: redactSecrets(userPrompts.join('\n\n─── Next Turn ───\n').slice(0, 2400)),
+    assistantSummary: redactSecrets(lastAssistantText.slice(0, 1200)),
     modelId: primaryModel,
     turnCount,
     activeDurationMs,
@@ -224,6 +231,8 @@ function readExistingJsonlRecords(jsonlPath) {
             if (STALE_TITLE_RE.test(String(prev.taskTitle || '').trim()) && !STALE_TITLE_RE.test(String(rec.taskTitle || '').trim())) {
               prev.taskTitle = rec.taskTitle;
             }
+            if (!prev.fullPrompt && rec.fullPrompt) prev.fullPrompt = rec.fullPrompt;
+            if (!prev.assistantSummary && rec.assistantSummary) prev.assistantSummary = rec.assistantSummary;
             prev.reusePercent = prev.reusePercent ?? rec.reusePercent;
             prev.reusedSymbolCount = Math.max(prev.reusedSymbolCount || 0, rec.reusedSymbolCount || 0);
             prev.newSymbolCount = Math.max(prev.newSymbolCount || 0, rec.newSymbolCount || 0);
@@ -690,10 +699,31 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
       ar.textContent='';
       (v.recentAnnotations||[]).slice(0,12).forEach(function(a){
         var tr=document.createElement('tr'),rt=a.riskScore!=null?a.riskScore.toFixed(2):'0.00';
-        [a.timestamp||'–',a.sessionId||'–',a.file||'–','+'+(a.linesAdded||0)+' / -'+(a.linesRemoved||0),'PRISM '+rt,a.verified?'✓ Attested':'○ Recorded',a.summary||'Annotated turn'].forEach(function(val,idx){
-          var td=document.createElement('td');if(idx===6)td.className='tcol';td.textContent=val;tr.appendChild(td);
+        var fullTxt=a.fullText||a.summary||'Annotated turn';
+        tr.className='crow';
+        tr.title=fullTxt+'\n(Click row to expand full provenance text)';
+        var dTr=document.createElement('tr');
+        dTr.style.display='none';
+        dTr.style.background='#070c0a';
+        var dTd=document.createElement('td');
+        dTd.colSpan=7;
+        dTd.style.padding='12px 16px';
+        var box=document.createElement('div');
+        box.style.cssText='background:#0b110e;border:1px solid var(--cyan);border-radius:10px;padding:12px 14px;font:400 12px/1.55 var(--mono);color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:260px;overflow-y:auto';
+        box.textContent=fullTxt;
+        dTd.appendChild(box);
+        dTr.appendChild(dTd);
+        var chev=null;
+        [a.timestamp||'–',a.sessionId||'–',a.file||'–','+'+(a.linesAdded||0)+' / -'+(a.linesRemoved||0),'PRISM '+rt,a.verified?'✓ Attested':'○ Recorded','▸ '+(a.summary||'Annotated turn')].forEach(function(val,idx){
+          var td=document.createElement('td');if(idx===6){td.className='tcol';chev=td}td.textContent=val;tr.appendChild(td);
         });
+        tr.onclick=function(){
+          var open=dTr.style.display!=='none';
+          dTr.style.display=open?'none':'table-row';
+          if(chev)chev.textContent=(open?'▸ ':'▾ ')+(a.summary||'Annotated turn');
+        };
         ar.appendChild(tr);
+        ar.appendChild(dTr);
       });
     }
   }
@@ -1010,19 +1040,63 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     el('m-sec').textContent=wsStats.blk+' guard blocks';
     el('m-loc').textContent='+'+vIns.toLocaleString()+' / -'+vDel.toLocaleString()+' LOC · '+wsStats.fixed+'/'+wsStats.found+' issues fixed';
     el('m-vibes').textContent=(vData&&vData.present)?('VIBES active · '+(vData.annotationsCount||0).toLocaleString()+' annotations · PRISM max '+Number(vData.maxPrismRisk||0).toFixed(2)):'PreToolUse secret & config-censor shield armed';
-    el('forensics-heading').textContent=activeWorkspace?('Recorded Engineering & Audit Sessions — '+activeWorkspace):'Recorded Engineering & Audit Sessions — All Workspaces';
-    var searched=searchQuery?list.filter(function(r){var q=searchQuery.toLowerCase();return String(r.taskTitle||'').toLowerCase().includes(q)||String(r.projectName||'').toLowerCase().includes(q)||String(r.modelId||'').toLowerCase().includes(q)}):list;
+    el('forensics-heading').textContent=activeWorkspace?('Recorded Engineering & Audit Sessions — '+activeWorkspace+' (Click Any Row to Expand Full Prompt)'):'Recorded Engineering & Audit Sessions — All Workspaces (Click Any Row to Expand Full Prompt)';
+    var searched=searchQuery?list.filter(function(r){var q=searchQuery.toLowerCase();return String(r.taskTitle||'').toLowerCase().includes(q)||String(r.fullPrompt||'').toLowerCase().includes(q)||String(r.assistantSummary||'').toLowerCase().includes(q)||String(r.projectName||'').toLowerCase().includes(q)||String(r.modelId||'').toLowerCase().includes(q)}):list;
     el('tbl-count').textContent=searched.length+' session(s)';
     var tbody=el('session-rows');tbody.textContent='';
     searched.slice().sort(function(a,b){return(b.startedAtMs||0)-(a.startedAtMs||0)}).slice(0,250).forEach(function(r){
       var tr=document.createElement('tr'),tb=r.tokenBuckets||{};
+      tr.className='crow';
       var tTok=(tb.promptTokens||0)+(tb.completionTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
       var iTok=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
       var cH=iTok>0?Math.round(((tb.cachedReadTokens||0)/iTok)*100):0,sv=estSaved(r);
-      [r.taskTitle||'Session',r.projectName||'–',r.timestampIso||'–',(r.modelId||'claude')+' ['+(r.activeLevel||'full')+']',fmtDur(r.activeDurationMs),fmtUsd(r.totalCostUsd||0)+' ('+fmtTok(tTok)+')',fmtUsd(sv)+' ('+cH+'%)',(r.guardBlockCount||0)+' blk · '+(r.securityFindingsResolved||0)+'/'+(r.securityFindingsTotal||0)+(r.vibesMaxPrismRisk!=null?' · PRISM '+r.vibesMaxPrismRisk:''),r.testStatusLabel||'recorded'].forEach(function(v,idx){
-        var td=document.createElement('td');if(idx===0)td.className='tcol';td.textContent=v;tr.appendChild(td);
+      var fullP=r.fullPrompt||r.taskTitle||'Session';
+      var outS=r.assistantSummary||'';
+      tr.title='PROMPT:\n'+fullP+(outS?('\n\nASSISTANT OUTCOME:\n'+outS):'')+'\n\n(Click row to expand inline)';
+      var dTr=document.createElement('tr');
+      dTr.style.display='none';
+      dTr.style.background='#070c0a';
+      var dTd=document.createElement('td');
+      dTd.colSpan=9;
+      dTd.style.padding='14px 18px';
+      var wrap=document.createElement('div');
+      wrap.style.cssText='background:#0b110e;border:1px solid var(--emerald);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px';
+      var metaBar=document.createElement('div');
+      metaBar.style.cssText='font:600 11px var(--mono);color:var(--cyan);display:flex;flex-wrap:wrap;gap:14px;border-bottom:1px solid var(--border);padding-bottom:8px';
+      metaBar.textContent='Session ID: '+(r.sessionId||r.recordId||'–')+' · Workspace: '+(r.projectName||'–')+' · Timestamp: '+(r.timestampIso||'–')+' · Model: '+(r.modelId||'claude')+' ['+(r.activeLevel||'full')+'] · Turns: '+(r.turnCount||1)+' · Tokens: '+((tb.promptTokens||0).toLocaleString())+' in / '+((tb.completionTokens||0).toLocaleString())+' out / '+((tb.cachedReadTokens||0).toLocaleString())+' cache-read / '+((tb.cachedWriteTokens||0).toLocaleString())+' cache-write';
+      wrap.appendChild(metaBar);
+      var pLbl=document.createElement('div');
+      pLbl.style.cssText='font:700 11px var(--mono);color:var(--emerald);text-transform:uppercase;letter-spacing:.06em';
+      pLbl.textContent='Full Task / User Prompt';
+      wrap.appendChild(pLbl);
+      var pBox=document.createElement('div');
+      pBox.style.cssText='background:#060908;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:400 12px/1.55 var(--mono);color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:280px;overflow-y:auto';
+      pBox.textContent=fullP;
+      wrap.appendChild(pBox);
+      if(outS){
+        var aLbl=document.createElement('div');
+        aLbl.style.cssText='font:700 11px var(--mono);color:var(--amber);text-transform:uppercase;letter-spacing:.06em;margin-top:2px';
+        aLbl.textContent='Assistant Outcome / Final Synopsis';
+        wrap.appendChild(aLbl);
+        var aBox=document.createElement('div');
+        aBox.style.cssText='background:#060908;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:400 12px/1.55 var(--mono);color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto';
+        aBox.textContent=outS;
+        wrap.appendChild(aBox);
+      }
+      dTd.appendChild(wrap);
+      dTr.appendChild(dTd);
+      var tCell=null;
+      ['▸ '+(r.taskTitle||'Session'),r.projectName||'–',r.timestampIso||'–',(r.modelId||'claude')+' ['+(r.activeLevel||'full')+']',fmtDur(r.activeDurationMs),fmtUsd(r.totalCostUsd||0)+' ('+fmtTok(tTok)+')',fmtUsd(sv)+' ('+cH+'%)',(r.guardBlockCount||0)+' blk · '+(r.securityFindingsResolved||0)+'/'+(r.securityFindingsTotal||0)+(r.vibesMaxPrismRisk!=null?' · PRISM '+r.vibesMaxPrismRisk:''),r.testStatusLabel||'recorded'].forEach(function(v,idx){
+        var td=document.createElement('td');if(idx===0){td.className='tcol';tCell=td}td.textContent=v;tr.appendChild(td);
       });
+      tr.onclick=function(){
+        var open=dTr.style.display!=='none';
+        dTr.style.display=open?'none':'table-row';
+        tr.classList.toggle('srow',!open);
+        if(tCell)tCell.textContent=(open?'▸ ':'▾ ')+(r.taskTitle||'Session');
+      };
       tbody.appendChild(tr);
+      tbody.appendChild(dTr);
     });
     renderEcon(list,wsStats);
     renderVibes(activeWorkspace);
@@ -1170,6 +1244,12 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
         if (STALE_TITLE_RE.test(String(existingRec.taskTitle || '').trim()) && parsed.taskTitle) {
           existingRec.taskTitle = parsed.taskTitle;
         }
+        if (!existingRec.fullPrompt && parsed.fullPrompt) {
+          existingRec.fullPrompt = parsed.fullPrompt;
+        }
+        if (!existingRec.assistantSummary && parsed.assistantSummary) {
+          existingRec.assistantSummary = parsed.assistantSummary;
+        }
         continue;
       }
 
@@ -1195,6 +1275,8 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
         startedAtMs: parsed.startedAtMs,
         projectName: projName,
         taskTitle: parsed.taskTitle,
+        fullPrompt: parsed.fullPrompt || '',
+        assistantSummary: parsed.assistantSummary || '',
         sessionId,
         activeLevel: 'full',
         modelId: parsed.modelId,

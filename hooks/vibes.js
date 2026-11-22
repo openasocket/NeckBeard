@@ -194,7 +194,8 @@ function readVibesTelemetry(root = process.cwd()) {
           summary: `Environment snapshot: ${entry.tool_name || 'agent'} ${entry.tool_version || ''} · model ${entry.model_name || 'default'}`.trim(),
         });
       } else if (eType === 'prompt') {
-        const promptSum = extractCleanTextSummary(entry.prompt_text || '');
+        const rawPrompt = String(entry.prompt_text || '');
+        const promptSum = extractCleanTextSummary(rawPrompt);
         if (promptSum) {
           manifestSummaries.set(hash, promptSum);
           const ctxFiles = Array.isArray(entry.prompt_context_files) && entry.prompt_context_files.length
@@ -210,10 +211,12 @@ function readVibesTelemetry(root = process.cwd()) {
             riskScore: null,
             verified: true,
             summary: promptSum,
+            fullText: rawPrompt.slice(0, 1800),
           });
         }
       } else if (eType === 'reasoning') {
-        const reasonSum = extractCleanTextSummary(entry.reasoning_text || '');
+        const rawReason = String(entry.reasoning_text || '');
+        const reasonSum = extractCleanTextSummary(rawReason);
         if (reasonSum) {
           manifestSummaries.set(hash, reasonSum);
           manifestInspectorRows.push({
@@ -226,6 +229,7 @@ function readVibesTelemetry(root = process.cwd()) {
             riskScore: null,
             verified: true,
             summary: `Reasoning: ${reasonSum}`,
+            fullText: rawReason.slice(0, 1800),
           });
         }
       } else if (eType === 'command') {
@@ -233,6 +237,11 @@ function readVibesTelemetry(root = process.cwd()) {
         const cleanCmd = extractCleanTextSummary(String(cmdSummary));
         if (cleanCmd) {
           manifestSummaries.set(hash, cleanCmd);
+          const fullCmd = [
+            entry.command_text ? `$ ${entry.command_text}` : '',
+            entry.working_directory ? `cwd: ${entry.working_directory}` : '',
+            entry.command_output_summary ? `output:\n${entry.command_output_summary}` : '',
+          ].filter(Boolean).join('\n');
           manifestInspectorRows.push({
             sessionId: hash.slice(0, 10),
             timestamp: createdStamp,
@@ -243,6 +252,7 @@ function readVibesTelemetry(root = process.cwd()) {
             riskScore: null,
             verified: entry.command_exit_code === 0 || entry.command_exit_code == null,
             summary: cleanCmd,
+            fullText: (fullCmd || String(cmdSummary)).slice(0, 1800),
           });
         }
       } else if (eType === 'decision') {

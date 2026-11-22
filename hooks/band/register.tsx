@@ -401,7 +401,12 @@ export const register: Register = (on) => {
     const clean = evt.text.trim()
     if (evt.origin.kind !== 'plugin' && clean !== '' && !clean.startsWith('/')) {
       const title = extractPromptTaskTitle(clean)
-      await update($, hudAtom, (s) => (s.taskTitle === '' ? { ...s, taskTitle: title } : s))
+      const promptSnippet = clean.slice(0, 2400)
+      await update($, hudAtom, (s) => ({
+        ...s,
+        taskTitle: s.taskTitle === '' ? title : s.taskTitle,
+        fullPrompt: s.fullPrompt ? `${s.fullPrompt}\n\n─── Next Turn ───\n${promptSnippet}`.slice(0, 2400) : promptSnippet,
+      }))
     }
     return next(evt)
   }).catch(($, evt, next) => next(evt))

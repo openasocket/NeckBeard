@@ -1192,13 +1192,34 @@ export function renderDashboardHtml(
       (v.recentAnnotations || []).slice(0, 12).forEach(function(a) {
         var tr = document.createElement('tr');
         var riskTxt = a.riskScore != null ? a.riskScore.toFixed(2) : '0.00';
-        [a.timestamp || '–', a.sessionId || '–', a.file || '–', '+' + (a.linesAdded || 0) + ' / -' + (a.linesRemoved || 0), 'PRISM ' + riskTxt, a.verified ? '✓ Attested' : '○ Recorded', a.summary || 'Annotated turn'].forEach(function(val, idx) {
+        var fullTxt = a.fullText || a.summary || 'Annotated turn';
+        tr.className = 'clickable-row';
+        tr.title = fullTxt + '\n(Click row to expand full provenance text)';
+        var dTr = document.createElement('tr');
+        dTr.style.display = 'none';
+        dTr.style.background = '#070c0a';
+        var dTd = document.createElement('td');
+        dTd.colSpan = 7;
+        dTd.style.padding = '12px 16px';
+        var box = document.createElement('div');
+        box.style.cssText = 'background:#0b110e;border:1px solid var(--nb-cyan);border-radius:10px;padding:12px 14px;font:400 12px/1.55 var(--nb-mono);color:var(--nb-text);white-space:pre-wrap;word-break:break-word;max-height:260px;overflow-y:auto';
+        box.textContent = fullTxt;
+        dTd.appendChild(box);
+        dTr.appendChild(dTd);
+        var chev = null;
+        [a.timestamp || '–', a.sessionId || '–', a.file || '–', '+' + (a.linesAdded || 0) + ' / -' + (a.linesRemoved || 0), 'PRISM ' + riskTxt, a.verified ? '✓ Attested' : '○ Recorded', '▸ ' + (a.summary || 'Annotated turn')].forEach(function(val, idx) {
           var td = document.createElement('td');
-          if (idx === 6) td.className = 'task-col';
+          if (idx === 6) { td.className = 'task-col'; chev = td; }
           td.textContent = val;
           tr.appendChild(td);
         });
+        tr.onclick = function() {
+          var open = dTr.style.display !== 'none';
+          dTr.style.display = open ? 'none' : 'table-row';
+          if (chev) chev.textContent = (open ? '▸ ' : '▾ ') + (a.summary || 'Annotated turn');
+        };
         annRows.appendChild(tr);
+        annRows.appendChild(dTr);
       });
     }
   }
@@ -1853,13 +1874,15 @@ export function renderDashboardHtml(
       : 'PreToolUse secret & config-censor shield armed';
 
     el('forensics-heading').textContent = activeWorkspace
-      ? ('Recorded Engineering & Audit Sessions — ' + activeWorkspace)
-      : 'Recorded Engineering & Audit Sessions — All Workspaces';
+      ? ('Recorded Engineering & Audit Sessions — ' + activeWorkspace + ' (Click Any Row to Expand Full Prompt)')
+      : 'Recorded Engineering & Audit Sessions — All Workspaces (Click Any Row to Expand Full Prompt)';
 
     var searched = searchQuery
       ? filtered.filter(function(r) {
           var q = searchQuery.toLowerCase();
           return String(r.taskTitle || '').toLowerCase().includes(q) ||
+                 String(r.fullPrompt || '').toLowerCase().includes(q) ||
+                 String(r.assistantSummary || '').toLowerCase().includes(q) ||
                  String(r.projectName || '').toLowerCase().includes(q) ||
                  String(r.modelId || '').toLowerCase().includes(q);
         })
@@ -1870,13 +1893,52 @@ export function renderDashboardHtml(
     tbody.textContent = '';
     searched.slice().sort(function(a, b) { return (b.startedAtMs || 0) - (a.startedAtMs || 0); }).slice(0, 250).forEach(function(r) {
       var tr = document.createElement('tr');
+      tr.className = 'clickable-row';
       var tb = r.tokenBuckets || {};
       var totalTok = (tb.promptTokens || 0) + (tb.completionTokens || 0) + (tb.cachedReadTokens || 0) + (tb.cachedWriteTokens || 0);
       var inTok = (tb.promptTokens || 0) + (tb.cachedReadTokens || 0) + (tb.cachedWriteTokens || 0);
       var cHit = inTok > 0 ? Math.round(((tb.cachedReadTokens || 0) / inTok) * 100) : 0;
       var savedUsd = estimateCacheSavingsUsd(r);
+      var fullP = r.fullPrompt || r.taskTitle || 'Session';
+      var outS = r.assistantSummary || '';
+      tr.title = 'PROMPT:\n' + fullP + (outS ? ('\n\nASSISTANT OUTCOME:\n' + outS) : '') + '\n\n(Click row to expand inline)';
+
+      var dTr = document.createElement('tr');
+      dTr.style.display = 'none';
+      dTr.style.background = '#070c0a';
+      var dTd = document.createElement('td');
+      dTd.colSpan = 9;
+      dTd.style.padding = '14px 18px';
+      var wrap = document.createElement('div');
+      wrap.style.cssText = 'background:#0b110e;border:1px solid var(--nb-emerald);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:10px';
+      var metaBar = document.createElement('div');
+      metaBar.style.cssText = 'font:600 11px var(--nb-mono);color:var(--nb-cyan);display:flex;flex-wrap:wrap;gap:14px;border-bottom:1px solid var(--nb-border);padding-bottom:8px';
+      metaBar.textContent = 'Session ID: ' + (r.sessionId || r.recordId || '–') + ' · Workspace: ' + (r.projectName || '–') + ' · Timestamp: ' + (r.timestampIso || '–') + ' · Model: ' + (r.modelId || 'claude') + ' [' + (r.activeLevel || 'full') + '] · Turns: ' + (r.turnCount || 1) + ' · Tokens: ' + ((tb.promptTokens || 0).toLocaleString()) + ' in / ' + ((tb.completionTokens || 0).toLocaleString()) + ' out / ' + ((tb.cachedReadTokens || 0).toLocaleString()) + ' cache-read / ' + ((tb.cachedWriteTokens || 0).toLocaleString()) + ' cache-write';
+      wrap.appendChild(metaBar);
+      var pLbl = document.createElement('div');
+      pLbl.style.cssText = 'font:700 11px var(--nb-mono);color:var(--nb-emerald);text-transform:uppercase;letter-spacing:.06em';
+      pLbl.textContent = 'Full Task / User Prompt';
+      wrap.appendChild(pLbl);
+      var pBox = document.createElement('div');
+      pBox.style.cssText = 'background:#060908;border:1px solid var(--nb-border);border-radius:8px;padding:10px 12px;font:400 12px/1.55 var(--nb-mono);color:var(--nb-text);white-space:pre-wrap;word-break:break-word;max-height:280px;overflow-y:auto';
+      pBox.textContent = fullP;
+      wrap.appendChild(pBox);
+      if (outS) {
+        var aLbl = document.createElement('div');
+        aLbl.style.cssText = 'font:700 11px var(--nb-mono);color:var(--nb-amber);text-transform:uppercase;letter-spacing:.06em;margin-top:2px';
+        aLbl.textContent = 'Assistant Outcome / Final Synopsis';
+        wrap.appendChild(aLbl);
+        var aBox = document.createElement('div');
+        aBox.style.cssText = 'background:#060908;border:1px solid var(--nb-border);border-radius:8px;padding:10px 12px;font:400 12px/1.55 var(--nb-mono);color:var(--nb-muted);white-space:pre-wrap;word-break:break-word;max-height:220px;overflow-y:auto';
+        aBox.textContent = outS;
+        wrap.appendChild(aBox);
+      }
+      dTd.appendChild(wrap);
+      dTr.appendChild(dTd);
+
+      var tCell = null;
       var cells = [
-        r.taskTitle || 'Session',
+        '▸ ' + (r.taskTitle || 'Session'),
         r.projectName || '–',
         r.timestampIso || '–',
         (r.modelId || 'claude') + ' [' + (r.activeLevel || 'full') + ']',
@@ -1888,11 +1950,18 @@ export function renderDashboardHtml(
       ];
       cells.forEach(function(val, i) {
         var td = document.createElement('td');
-        if (i === 0) td.className = 'task-col';
+        if (i === 0) { td.className = 'task-col'; tCell = td; }
         td.textContent = val;
         tr.appendChild(td);
       });
+      tr.onclick = function() {
+        var open = dTr.style.display !== 'none';
+        dTr.style.display = open ? 'none' : 'table-row';
+        tr.classList.toggle('selected-row', !open);
+        if (tCell) tCell.textContent = (open ? '▸ ' : '▾ ') + (r.taskTitle || 'Session');
+      };
       tbody.appendChild(tr);
+      tbody.appendChild(dTr);
     });
 
     renderEconomicsAndVelocity(filtered, wsStats);

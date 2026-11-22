@@ -305,7 +305,7 @@ a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
 .card-sec.vibes-hi{border-color:rgba(6,182,212,.45);background:linear-gradient(180deg,rgba(6,182,212,.05) 0%,var(--card) 100%)}
 .sec-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .sec-head h2{margin:0;font:700 15.5px var(--mono);display:flex;align-items:center;gap:10px}
-.split2{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:14px}
+.split2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:14px}.split2>*{min-width:0}
 .vpillars{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:12px}
 .pbox{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
 .pk{font:700 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--cyan)}
@@ -380,22 +380,20 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
       <div style="background:#080d0b;border:1px solid var(--border);border-radius:12px;padding:14px">
         <svg id="velocity-svg" viewBox="0 0 960 235" style="width:100%;height:auto;display:block"></svg>
       </div>
-      <div class="split2">
-        <div>
-          <div style="font:700 11.5px var(--mono);color:var(--emerald);margin-bottom:8px;display:flex;justify-content:space-between">
-            <span>WORKSPACE VS. ALL-WORKSPACES ECONOMICS MATRIX (CLICK ANY ROW TO INSPECT)</span>
-          </div>
-          <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:330px">
-            <table><thead><tr><th>Workspace</th><th>Sessions / Turns</th><th>Agent / Wall Time</th><th>Cache Hit %</th><th>Est. Saved</th><th>Actual Spend</th><th>Share of Total</th><th>VIBES</th></tr></thead><tbody id="repo-scorecard-rows"></tbody></table>
-          </div>
+      <div style="margin-top:16px;min-width:0">
+        <div style="font:700 11.5px var(--mono);color:var(--emerald);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span>WORKSPACE VS. ALL-WORKSPACES ECONOMICS MATRIX (CLICK ANY ROW TO INSPECT)</span>
         </div>
-        <div>
-          <div style="font:700 11.5px var(--mono);color:var(--amber);margin-bottom:8px;display:flex;justify-content:space-between">
-            <span id="model-table-title">MODEL &amp; PROMPT-CACHE ECONOMICS (SELECTED SCOPE)</span>
-          </div>
-          <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:330px">
-            <table><thead><tr><th>Model</th><th>Sess / Turns</th><th>Input + Cache</th><th>Output</th><th>Cache Hit</th><th>Est. Saved</th><th>Spend</th></tr></thead><tbody id="model-econ-rows"></tbody></table>
-          </div>
+        <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:330px">
+          <table><thead><tr><th>Workspace</th><th>Sessions / Turns</th><th>Agent / Wall Time</th><th>Cache Hit %</th><th>Est. Saved</th><th>Actual Spend</th><th>Share of Total</th><th>VIBES</th></tr></thead><tbody id="repo-scorecard-rows"></tbody></table>
+        </div>
+      </div>
+      <div style="margin-top:16px;min-width:0">
+        <div style="font:700 11.5px var(--mono);color:var(--amber);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span id="model-table-title">MODEL &amp; PROMPT-CACHE ECONOMICS (SELECTED SCOPE)</span>
+        </div>
+        <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:300px">
+          <table><thead><tr><th>Model</th><th>Sess / Turns</th><th>Input + Cache</th><th>Output</th><th>Cache Hit</th><th>Est. Saved</th><th>Spend</th></tr></thead><tbody id="model-econ-rows"></tbody></table>
         </div>
       </div>
     </section>

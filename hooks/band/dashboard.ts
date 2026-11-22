@@ -378,9 +378,12 @@ a:hover { text-decoration: underline; }
 }
 .split-2 {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   margin-top: 14px;
+}
+.split-2 > * {
+  min-width: 0;
 }
 .vibes-pillars {
   display: grid;
@@ -639,51 +642,49 @@ export function renderDashboardHtml(
       <div style="background:#080d0b;border:1px solid var(--nb-border);border-radius:12px;padding:14px">
         <svg id="velocity-svg" viewBox="0 0 960 235" style="width:100%;height:auto;display:block"></svg>
       </div>
-      <div class="split-2">
-        <div>
-          <div style="font:700 11.5px var(--nb-mono);color:var(--nb-emerald);margin-bottom:8px;display:flex;justify-content:space-between">
-            <span>WORKSPACE VS. ALL-WORKSPACES ECONOMICS MATRIX (CLICK ANY ROW TO INSPECT)</span>
-            <span id="repo-matrix-sub" style="color:var(--nb-muted)"></span>
-          </div>
-          <div style="overflow-x:auto;background:var(--nb-surface);border:1px solid var(--nb-border);border-radius:12px;max-height:330px">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Workspace</th>
-                  <th>Sessions / Turns</th>
-                  <th>Agent / Wall Time</th>
-                  <th>Cache Hit %</th>
-                  <th>Est. Saved</th>
-                  <th>Actual Spend</th>
-                  <th>Share of Total</th>
-                  <th>VIBES</th>
-                </tr>
-              </thead>
-              <tbody id="repo-scorecard-rows"></tbody>
-            </table>
-          </div>
+      <div style="margin-top:16px;min-width:0">
+        <div style="font:700 11.5px var(--nb-mono);color:var(--nb-emerald);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span>WORKSPACE VS. ALL-WORKSPACES ECONOMICS MATRIX (CLICK ANY ROW TO INSPECT)</span>
+          <span id="repo-matrix-sub" style="color:var(--nb-muted)"></span>
         </div>
-        <div>
-          <div style="font:700 11.5px var(--nb-mono);color:var(--nb-amber);margin-bottom:8px;display:flex;justify-content:space-between">
-            <span id="model-table-title">MODEL &amp; PROMPT-CACHE ECONOMICS (SELECTED SCOPE)</span>
-            <span id="model-table-sub" style="color:var(--nb-muted)"></span>
-          </div>
-          <div style="overflow-x:auto;background:var(--nb-surface);border:1px solid var(--nb-border);border-radius:12px;max-height:330px">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Model</th>
-                  <th>Sess / Turns</th>
-                  <th>Input + Cache</th>
-                  <th>Output</th>
-                  <th>Cache Hit</th>
-                  <th>Est. Saved</th>
-                  <th>Spend</th>
-                </tr>
-              </thead>
-              <tbody id="model-econ-rows"></tbody>
-            </table>
-          </div>
+        <div style="overflow-x:auto;background:var(--nb-surface);border:1px solid var(--nb-border);border-radius:12px;max-height:330px">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Workspace</th>
+                <th>Sessions / Turns</th>
+                <th>Agent / Wall Time</th>
+                <th>Cache Hit %</th>
+                <th>Est. Saved</th>
+                <th>Actual Spend</th>
+                <th>Share of Total</th>
+                <th>VIBES</th>
+              </tr>
+            </thead>
+            <tbody id="repo-scorecard-rows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="margin-top:16px;min-width:0">
+        <div style="font:700 11.5px var(--nb-mono);color:var(--nb-amber);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span id="model-table-title">MODEL &amp; PROMPT-CACHE ECONOMICS (SELECTED SCOPE)</span>
+          <span id="model-table-sub" style="color:var(--nb-muted)"></span>
+        </div>
+        <div style="overflow-x:auto;background:var(--nb-surface);border:1px solid var(--nb-border);border-radius:12px;max-height:300px">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Sess / Turns</th>
+                <th>Input + Cache</th>
+                <th>Output</th>
+                <th>Cache Hit</th>
+                <th>Est. Saved</th>
+                <th>Spend</th>
+              </tr>
+            </thead>
+            <tbody id="model-econ-rows"></tbody>
+          </table>
         </div>
       </div>
     </section>

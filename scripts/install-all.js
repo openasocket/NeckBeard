@@ -373,7 +373,17 @@ function syncAllHarnesses(options = {}) {
   const env = options.env || process.env;
   const dryRun = Boolean(options.dryRun);
   const removePonytail = options.removePonytail !== false;
+  const autoPull = options.autoPull !== false && !dryRun;
   const home = getHomeDir(env);
+
+  const gitBin = findBinaryOnPath('git', env);
+  if (autoPull && gitBin && fs.existsSync(path.join(ROOT, '.git'))) {
+    const statusRes = runCliSafe(gitBin, ['status', '--porcelain'], env, 5000);
+    if (statusRes.ok && statusRes.stdout === '') {
+      runCliSafe(gitBin, ['pull', '--ff-only', 'origin', 'main', '--tags'], env, 15000);
+    }
+  }
+
   const version = readCurrentVersion();
   const commitSha = getLatestCommitSha();
 

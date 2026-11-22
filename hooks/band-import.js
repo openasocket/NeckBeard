@@ -257,7 +257,7 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
     </div>
     <div class="rail-lbl">Workspaces (<span id="ws-total-cnt">0</span>)</div>
     <div id="ws-list" style="overflow-y:auto;max-height:70vh"></div>
-    <div class="rail-foot">NeckBeard Command Center v0.3<br>3-Gate Engine + VIBES Hub<br>100% Local · Zero Network Calls</div>
+    <div class="rail-foot">NeckBeard Command Center v0.3.1<br>3-Gate Engine + VIBES Hub<br>100% Local · Zero Network Calls</div>
   </aside>
   <main class="stage">
     <header class="topbar">

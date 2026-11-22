@@ -358,7 +358,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     <div class="kpis">
       <div class="panel"><div class="m-tag"><span>API Spend &amp; Unit Economics</span><span style="color:var(--emerald)">ECONOMICS</span></div><div class="m-val" id="m-cost">$0.00</div><div class="m-sub" id="m-cost-unit">$0.00 / session · $0.00 / turn</div><div class="m-comp" id="m-cost-comp">100% of portfolio spend</div></div>
       <div class="panel"><div class="m-tag"><span>Prompt-Cache Dollar Savings</span><span style="color:var(--cyan)">CACHE ROI</span></div><div class="m-val" id="m-saved" style="color:var(--cyan)">$0.00 saved</div><div class="m-sub" id="m-cache">0% cache hit rate · 0 tokens</div><div class="m-comp" id="m-cache-comp">Prompt caching efficiency</div></div>
-      <div class="panel"><div class="m-tag"><span>Active Engineering Velocity</span><span style="color:var(--amber)">THROUGHPUT</span></div><div class="m-val" id="m-time">0h 0m</div><div class="m-sub" id="m-turns">0 sessions · 0 turns</div><div class="m-comp" id="m-load">Target load: unset</div></div>
+      <div class="panel"><div class="m-tag"><span>Agent Compute vs. Wall-Clock Time</span><span style="color:var(--amber)">VELOCITY</span></div><div class="m-val" id="m-time">0h 0m</div><div class="m-sub" id="m-turns">0 sessions · 0 turns</div><div class="m-comp" id="m-load">Target load: unset</div></div>
       <div class="panel"><div class="m-tag"><span>Security Shield &amp; Code Delta</span><span style="color:var(--emerald)">3 GATES</span></div><div class="m-val" id="m-sec">0 blocked</div><div class="m-sub" id="m-loc">+0 / -0 LOC · 0/0 issues fixed</div><div class="m-comp" id="m-vibes">PreToolUse &amp; VIBES status</div></div>
     </div>
 
@@ -377,7 +377,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
             <span>WORKSPACE VS. ALL-WORKSPACES ECONOMICS MATRIX (CLICK ANY ROW TO INSPECT)</span>
           </div>
           <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:330px">
-            <table><thead><tr><th>Workspace</th><th>Sessions / Turns</th><th>Active Time</th><th>Cache Hit %</th><th>Est. Saved</th><th>Actual Spend</th><th>Share of Total</th><th>VIBES</th></tr></thead><tbody id="repo-scorecard-rows"></tbody></table>
+            <table><thead><tr><th>Workspace</th><th>Sessions / Turns</th><th>Agent / Wall Time</th><th>Cache Hit %</th><th>Est. Saved</th><th>Actual Spend</th><th>Share of Total</th><th>VIBES</th></tr></thead><tbody id="repo-scorecard-rows"></tbody></table>
           </div>
         </div>
         <div>
@@ -529,15 +529,31 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     return(cr/1e6)*rate;
   }
   function sumList(list){
-    var s={sessions:list.length,turns:0,cost:0,saved:0,tok:0,cRead:0,inAll:0,outTok:0,dur:0,ins:0,del:0,blk:0,found:0,fixed:0};
+    var s={sessions:list.length,turns:0,cost:0,saved:0,tok:0,cRead:0,inAll:0,outTok:0,dur:0,wallDur:0,parallelFactor:1,activeDays:1,ins:0,del:0,blk:0,found:0,fixed:0};
+    var ivs=[],days={};
     list.forEach(function(r){
       s.cost+=r.totalCostUsd||0;s.saved+=estSaved(r);
       var tb=r.tokenBuckets||{},pT=tb.promptTokens||0,cT=tb.completionTokens||0,crT=tb.cachedReadTokens||0,cwT=tb.cachedWriteTokens||0;
       s.tok+=pT+cT+crT+cwT;s.cRead+=crT;s.inAll+=pT+crT+cwT;s.outTok+=cT;
-      s.dur+=r.activeDurationMs||0;s.turns+=r.turnCount||1;
+      var d=Math.max(0,r.activeDurationMs||0);
+      s.dur+=d;s.turns+=r.turnCount||1;
+      if(r.startedAtMs&&d>0)ivs.push([r.startedAtMs,r.startedAtMs+d]);
+      if(r.timestampIso)days[String(r.timestampIso).slice(0,10)]=1;
       s.ins+=r.linesInserted||0;s.del+=r.linesDeleted||0;s.blk+=r.guardBlockCount||0;
       s.found+=r.securityFindingsTotal||0;s.fixed+=r.securityFindingsResolved||0;
     });
+    ivs.sort(function(a,b){return a[0]-b[0]});
+    var cs=-1,ce=-1;
+    for(var i=0;i<ivs.length;i++){
+      var st=ivs[i][0],en=ivs[i][1];
+      if(cs===-1){cs=st;ce=en}
+      else if(st<=ce){if(en>ce)ce=en}
+      else{s.wallDur+=(ce-cs);cs=st;ce=en}
+    }
+    if(cs!==-1)s.wallDur+=(ce-cs);
+    if(s.wallDur<=0)s.wallDur=s.dur;
+    s.parallelFactor=s.wallDur>0?+(s.dur/s.wallDur).toFixed(2):1;
+    s.activeDays=Math.max(1,Object.keys(days).length);
     s.cacheHitPct=s.inAll>0?Math.round((s.cRead/s.inAll)*100):0;
     s.costPerSession=s.sessions>0?s.cost/s.sessions:0;
     s.costPerTurn=s.turns>0?s.cost/s.turns:0;
@@ -554,12 +570,16 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     render();
   }
   function aggAllVibes(){
-    var ks=Object.keys(meta),agg={present:false,vibesRepoCount:0,annotationsCount:0,verifiedCount:0,blobsCount:0,attestationsCount:0,iocRulesCount:0,maxPrismRisk:0,highRiskCount:0,traceIncidents:0,traceResolved:0,decisions:0,linesAdded:0,linesRemoved:0,filesTouchedCount:0,prismBuckets:{low:0,moderate:0,high:0,critical:0},fileHotspots:[],decisionRecords:[],incidentRecords:[],recentAnnotations:[]};
+    var ks=Object.keys(meta),agg={present:false,vibesRepoCount:0,annotationsCount:0,verifiedCount:0,blobsCount:0,attestationsCount:0,iocRulesCount:0,maxPrismRisk:0,highRiskCount:0,traceIncidents:0,traceResolved:0,decisions:0,linesAdded:0,linesRemoved:0,filesTouchedCount:0,manifestCounts:{environment:0,reasoning:0,command:0,prompt:0,decision:0,total:0},prismBuckets:{low:0,moderate:0,high:0,critical:0},fileHotspots:[],decisionRecords:[],incidentRecords:[],recentAnnotations:[]};
     ks.forEach(function(k){
       var v=meta[k]&&meta[k].vibes;if(!v||!v.present)return;
       agg.present=true;agg.vibesRepoCount+=1;
       agg.annotationsCount+=v.annotationsCount||0;agg.verifiedCount+=v.verifiedCount||0;
       agg.blobsCount+=v.blobsCount||0;agg.attestationsCount+=v.attestationsCount||0;agg.iocRulesCount+=v.iocRulesCount||0;
+      var mc=v.manifestCounts||{};
+      agg.manifestCounts.environment+=mc.environment||0;agg.manifestCounts.reasoning+=mc.reasoning||0;
+      agg.manifestCounts.command+=mc.command||0;agg.manifestCounts.prompt+=mc.prompt||0;
+      agg.manifestCounts.decision+=mc.decision||0;agg.manifestCounts.total+=mc.total||0;
       if((v.maxPrismRisk||0)>agg.maxPrismRisk)agg.maxPrismRisk=v.maxPrismRisk;
       agg.highRiskCount+=v.highRiskCount||0;agg.traceIncidents+=v.traceIncidents||0;agg.traceResolved+=v.traceResolved||0;
       agg.decisions+=v.decisions||0;agg.linesAdded+=v.linesAdded||0;agg.linesRemoved+=v.linesRemoved||0;agg.filesTouchedCount+=v.filesTouchedCount||0;
@@ -600,17 +620,20 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
       if(abar)abar.style.display='flex';
       return;
     }
-    var ac=v.annotationsCount||0,vp=ac>0?Math.round(((v.verifiedCount||0)/ac)*100):0;
-    el('vp-prov').textContent=ac.toLocaleString()+' annotations';
-    el('vp-prov-sub').textContent=(v.blobsCount||0).toLocaleString()+' SHA-256 blobs · '+(v.filesTouchedCount||0)+' files';
+    var ac=v.annotationsCount||0,mc=v.manifestCounts||{},mTot=mc.total||0;
+    var baseCnt=ac>0?ac:(mTot>0?mTot:1);
+    var vp=Math.min(100,Math.round(((v.verifiedCount||0)/baseCnt)*100));
+    el('vp-prov').textContent=ac>0?(ac.toLocaleString()+' annotations'):(mTot.toLocaleString()+' manifest entries');
+    el('vp-prov-sub').textContent=(mTot||v.blobsCount||0).toLocaleString()+' manifest entries · '+(v.filesTouchedCount||0)+' files · v'+(v.standardVersion||'1.1');
     el('vp-verify').textContent=vp+'% verified';
-    el('vp-verify-sub').textContent=(v.attestationsCount||0).toLocaleString()+' attestations · Guard locked';
+    el('vp-verify-sub').textContent=(v.attestationsCount||0).toLocaleString()+' attestations ('+String(v.configuredAssurance||'high').toUpperCase()+') · Guard locked';
     el('vp-prism').textContent=Number(v.maxPrismRisk||0).toFixed(2)+' max risk';
     el('vp-prism-sub').textContent=(v.highRiskCount||0)+' High/Critical (>= 0.60)';
-    el('vp-evolve').textContent=(v.decisions||0)+' decisions';
-    el('vp-evolve-sub').textContent='+'+(v.linesAdded||0).toLocaleString()+' / -'+(v.linesRemoved||0).toLocaleString()+' attributed LOC';
+    var rChains=mc.reasoning||0,cChains=mc.command||0;
+    el('vp-evolve').textContent=(v.decisions||0)>0?((v.decisions||0)+' decisions'):(rChains>0?(rChains.toLocaleString()+' reasoning chains'):((v.decisionRecords&&v.decisionRecords.length)||0)+' records');
+    el('vp-evolve-sub').textContent='+'+(v.linesAdded||0).toLocaleString()+' / -'+(v.linesRemoved||0).toLocaleString()+' LOC'+(cChains>0?(' · '+cChains.toLocaleString()+' cmds'):'');
     el('vp-trace').textContent=(v.traceResolved||0)+' / '+(v.traceIncidents||0)+' fixed';
-    el('vp-trace-sub').textContent=(v.iocRulesCount||0)+' custom IoC rules in iocs.d/';
+    el('vp-trace-sub').textContent=(v.iocRulesCount||0)+' custom IoC rules'+(v.hasAuditDb?' · audit.db active':'');
     var vbox=el('vibes-svg');
     if(vbox){
       vbox.textContent='';var NS='http://www.w3.org/2000/svg';
@@ -736,7 +759,8 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     var rMap={};
     records.forEach(function(r){
       var p=r.projectName||'workspace';
-      if(!rMap[p])rMap[p]={name:p,sessions:0,turns:0,dur:0,cost:0,saved:0,cRead:0,tIn:0};
+      if(!rMap[p])rMap[p]={name:p,list:[],sessions:0,turns:0,dur:0,cost:0,saved:0,cRead:0,tIn:0};
+      rMap[p].list.push(r);
       rMap[p].sessions+=1;rMap[p].turns+=r.turnCount||1;rMap[p].dur+=r.activeDurationMs||0;rMap[p].cost+=r.totalCostUsd||0;rMap[p].saved+=estSaved(r);
       var tb=r.tokenBuckets||{};rMap[p].cRead+=tb.cachedReadTokens||0;rMap[p].tIn+=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
     });
@@ -745,7 +769,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
       rRows.textContent='';
       var bTr=document.createElement('tr');
       bTr.className='crow brow'+(activeWorkspace===''?' srow':'');
-      ['★ ALL WORKSPACES ('+Object.keys(rMap).length+')',portStats.sessions+' / '+portStats.turns,fmtDur(portStats.dur),portStats.cacheHitPct+'%',fmtUsd(portStats.saved),fmtUsd(portStats.cost),'100.0%','Portfolio'].forEach(function(v,idx){
+      ['★ ALL WORKSPACES ('+Object.keys(rMap).length+')',portStats.sessions+' / '+portStats.turns,fmtDur(portStats.dur)+' agent / '+fmtDur(portStats.wallDur)+' wall ('+portStats.parallelFactor+'x)',portStats.cacheHitPct+'%',fmtUsd(portStats.saved),fmtUsd(portStats.cost),'100.0%','Portfolio'].forEach(function(v,idx){
         var td=document.createElement('td');if(idx===0)td.className='tcol';td.textContent=v;bTr.appendChild(td);
       });
       bTr.onclick=function(){selectWs('')};
@@ -760,7 +784,8 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
         var ch=rp.tIn>0?Math.round((rp.cRead/rp.tIn)*100)+'%':'0%';
         var sh=portStats.cost>0?(rp.cost/portStats.cost)*100:0;
         var wm=meta[rp.name]||{},st=(wm.vibes&&wm.vibes.present?'● VIBES':'○ Std');
-        [(rp.name===activeWorkspace?'▶ ':'')+rp.name,rp.sessions+' / '+rp.turns,fmtDur(rp.dur),ch,fmtUsd(rp.saved),fmtUsd(rp.cost)].forEach(function(v,idx){
+        var rpSt=sumList(rp.list);
+        [(rp.name===activeWorkspace?'▶ ':'')+rp.name,rp.sessions+' / '+rp.turns,fmtDur(rp.dur)+' / '+fmtDur(rpSt.wallDur)+' ('+rpSt.activeDays+'d)',ch,fmtUsd(rp.saved),fmtUsd(rp.cost)].forEach(function(v,idx){
           var td=document.createElement('td');if(idx===0)td.className='tcol';td.textContent=v;tr.appendChild(td);
         });
         var sTd=document.createElement('td');
@@ -975,10 +1000,10 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     el('m-saved').textContent=fmtUsd(wsStats.saved)+' saved';
     el('m-cache').textContent=wsStats.cacheHitPct+'% cache hit · '+fmtTok(wsStats.tok)+' total tok';
     el('m-cache-comp').textContent=activeWorkspace?('All-Workspaces avg cache hit: '+portStats.cacheHitPct+'% ('+fmtUsd(portStats.saved)+' total saved)'):(fmtTok(portStats.cRead)+' cached read tokens across portfolio');
-    el('m-time').textContent=fmtDur(wsStats.dur);
+    el('m-time').textContent=fmtDur(wsStats.dur)+' agent';
     var shTime=portStats.dur>0?((wsStats.dur/portStats.dur)*100).toFixed(1):'100.0';
-    el('m-turns').textContent=wsStats.sessions+' sessions · '+wsStats.turns.toLocaleString()+' turns ('+shTime+'% of time)';
-    el('m-load').textContent='Target load: '+(wm.load||'unset (/neckbeard load <value>)');
+    el('m-turns').textContent='vs. '+fmtDur(wsStats.wallDur)+' wall time ('+wsStats.parallelFactor+'x parallel · '+wsStats.activeDays+'d) · '+wsStats.sessions+' sess · '+wsStats.turns.toLocaleString()+' turns';
+    el('m-load').textContent=activeWorkspace?(shTime+'% of All-Workspaces agent time ('+fmtDur(portStats.dur)+') · Load: '+(wm.load||'unset (/neckbeard load <value>)')):('Target load: '+(wm.load||'per-workspace (.neckbeard.json)')+' · All-Workspaces 100%');
     var vIns=(vData&&vData.linesAdded)||wsStats.ins,vDel=(vData&&vData.linesRemoved)||wsStats.del;
     el('m-sec').textContent=wsStats.blk+' guard blocks';
     el('m-loc').textContent='+'+vIns.toLocaleString()+' / -'+vDel.toLocaleString()+' LOC · '+wsStats.fixed+'/'+wsStats.found+' issues fixed';
@@ -1202,20 +1227,36 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
   });
   fs.writeFileSync(jsonlPath, allRecords.map((r) => JSON.stringify(r)).join('\n') + (allRecords.length ? '\n' : ''));
 
+  // Discover sibling project directories (e.g. under the common parent workspace directory) that have .ai-audit/ or .neckbeard.json or match recorded project names
+  const parentCandidates = new Set([path.dirname(path.resolve(cwd))]);
+  for (const wsPath of discoveredWorkspacePaths.values()) {
+    parentCandidates.add(path.dirname(wsPath));
+  }
+  for (const parentDir of parentCandidates) {
+    if (!parentDir || parentDir === '/' || parentDir === os.homedir()) continue;
+    let children = [];
+    try { children = fs.readdirSync(parentDir, { withFileTypes: true }); } catch { continue; }
+    for (const child of children) {
+      if (!child.isDirectory() || child.name.startsWith('.')) continue;
+      const fullChild = path.join(parentDir, child.name);
+      if (!discoveredWorkspacePaths.has(child.name) && (hasVibes(fullChild) || isProjectDirectory(fullChild))) {
+        discoveredWorkspacePaths.set(child.name, fullChild);
+      }
+    }
+  }
+
   // Populate per-workspace boundary maps, load configs, and VIBES telemetry for all discovered project directories
   const workspacesMeta = {};
-  let boundaryScans = 0;
   for (const [projName, wsPath] of discoveredWorkspacePaths.entries()) {
     const isCurrent = projName === activeProject;
     const wsHasVibes = hasVibes(wsPath);
     const wsCfg = readProjectConfig(wsPath, env);
-    const canScanBounds = isCurrent || (boundaryScans < 35 && isProjectDirectory(wsPath));
+    const canScanBounds = isCurrent || isProjectDirectory(wsPath);
     if (!isCurrent && !wsHasVibes && !wsCfg && !canScanBounds) continue;
 
     let bounds = (wsCfg && wsCfg.boundaries) || null;
     if (!bounds && canScanBounds) {
       bounds = buildBoundaryMap(wsPath, 16);
-      boundaryScans++;
     }
     const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };
     const rawVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;
@@ -1230,6 +1271,10 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
       vibes: compactVibes,
     };
   }
+
+  try {
+    fs.writeFileSync(path.join(telemetryDir, 'workspaces-meta.json'), JSON.stringify(workspacesMeta));
+  } catch {}
 
   const html = generateCommandCenterHtml(allRecords, workspacesMeta, Date.now());
   const dashboardFile = path.join(telemetryDir, 'dashboard.html');

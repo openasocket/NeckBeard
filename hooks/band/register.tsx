@@ -116,7 +116,26 @@ async function inspectWorkspaceConfig($: EngineInterface, rootDir: string): Prom
 
 async function inspectVibesAnnotations($: EngineInterface, rootDir: string) {
   try {
-    const raw = await $.fs.read(`${rootDir}/.ai-audit/annotations.jsonl`)
+    const hasConfig = await $.fs.exists(`${rootDir}/.ai-audit/config.json`).catch(() => false)
+    const hasManifest = await $.fs.exists(`${rootDir}/.ai-audit/manifest.json`).catch(() => false)
+    const hasAnnotations = await $.fs.exists(`${rootDir}/.ai-audit/annotations.jsonl`).catch(() => false)
+    const hasAuditDb = await $.fs.exists(`${rootDir}/.ai-audit/audit.db`).catch(() => false)
+    const hasSessionState = await $.fs.exists(`${rootDir}/.ai-audit/.session_state.json`).catch(() => false)
+    if (!hasConfig && !hasManifest && !hasAnnotations && !hasAuditDb && !hasSessionState) {
+      return {
+        present: false,
+        annotationsCount: 0,
+        verifiedCount: 0,
+        maxRisk: null,
+        findings: 0,
+        resolved: 0,
+        inserted: 0,
+        deleted: 0,
+        prismBuckets: { low: 0, moderate: 0, high: 0, critical: 0 },
+        fileHotspots: [],
+      }
+    }
+    const raw = await $.fs.read(`${rootDir}/.ai-audit/annotations.jsonl`).catch(() => '')
     let maxRisk: number | null = null
     let findings = 0
     let resolved = 0
@@ -133,9 +152,13 @@ async function inspectVibesAnnotations($: EngineInterface, rootDir: string) {
       try {
         const rec = JSON.parse(t) as Record<string, unknown>
         annotationsCount++
-        const isVer = Boolean(rec.verified === true || rec.status === 'verified' || rec.attestation_id)
+        const isVer = Boolean(rec.verified === true || rec.status === 'verified' || rec.assurance_level === 'high' || rec.attestation_id)
         if (isVer) verifiedCount++
-        const add = typeof rec.lines_added === 'number' ? rec.lines_added : 0
+        const rangeAdd =
+          typeof rec.line_start === 'number' && typeof rec.line_end === 'number'
+            ? Math.max(1, rec.line_end - rec.line_start + 1)
+            : 0
+        const add = typeof rec.lines_added === 'number' ? rec.lines_added : rangeAdd
         const del = typeof rec.lines_removed === 'number' ? rec.lines_removed : 0
         inserted += add
         deleted += del
@@ -173,7 +196,7 @@ async function inspectVibesAnnotations($: EngineInterface, rootDir: string) {
       }
     }
     return {
-      present: annotationsCount > 0,
+      present: true,
       annotationsCount,
       verifiedCount,
       maxRisk,
@@ -200,39 +223,67 @@ async function inspectVibesAnnotations($: EngineInterface, rootDir: string) {
   }
 }
 
-async function buildCurrentWorkspaceMeta($: EngineInterface, state: NeckbeardHudState) {
+async function buildCurrentWorkspaceMeta($: EngineInterface, state: NeckbeardHudState, telemetryDir?: string) {
+  const dir = telemetryDir ?? (await resolveTelemetryDir($))
+  let existingMetaMap: Record<string, Record<string, unknown>> = {}
+  try {
+    const rawMeta = await $.fs.read(`${dir}/workspaces-meta.json`)
+    existingMetaMap = JSON.parse(rawMeta) as Record<string, Record<string, unknown>>
+  } catch {
+    try {
+      const prevHtml = await $.fs.read(`${dir}/dashboard.html`)
+      const m = /<script type="application\/json" id="nb-telemetry-payload">([\s\S]*?)<\/script>/.exec(prevHtml)
+      if (m && m[1]) {
+        const parsed = JSON.parse(m[1]) as { workspacesMeta?: Record<string, Record<string, unknown>> }
+        if (parsed.workspacesMeta) existingMetaMap = parsed.workspacesMeta
+      }
+    } catch {}
+  }
+
   const repo = await $.session.repo().catch(() => null)
   const rootDir = repo?.root ?? (await $.session.cwd())
+  const wsName = state.projectName || basenameOf(rootDir)
+  const prevWs = (existingMetaMap[wsName] ?? {}) as Record<string, unknown>
+  const prevVibes = (prevWs.vibes ?? null) as Record<string, unknown> | null
+
   const vibes = await inspectVibesAnnotations($, rootDir)
   let parsedCfg: { load?: string; boundaryLoad?: Record<string, string>; boundaries?: Record<string, unknown> } = {}
   try {
     parsedCfg = JSON.parse(await $.fs.read(`${rootDir}/.neckbeard.json`))
   } catch {}
-  return {
-    [state.projectName || basenameOf(rootDir)]: {
-      load: parsedCfg.load ?? state.loadEnvelope,
-      boundaryLoad: parsedCfg.boundaryLoad ?? {},
-      boundaries: (parsedCfg.boundaries as Record<string, unknown>) ?? { external: {}, internal: {} },
-      driftAdded: state.unreviewedBoundaries,
-      prismRisk: vibes.maxRisk,
-      vibes: vibes.present
-        ? {
-            present: true,
-            annotationsCount: vibes.annotationsCount,
-            verifiedCount: vibes.verifiedCount,
-            maxPrismRisk: vibes.maxRisk ?? 0,
-            highRiskCount: vibes.findings,
-            traceIncidents: vibes.findings,
-            traceResolved: vibes.resolved,
-            linesAdded: vibes.inserted,
-            linesRemoved: vibes.deleted,
-            filesTouchedCount: vibes.fileHotspots.length,
-            prismBuckets: vibes.prismBuckets,
-            fileHotspots: vibes.fileHotspots,
-          }
-        : null,
+
+  const mergedVibes = vibes.present
+    ? {
+        ...(prevVibes ?? {}),
+        present: true,
+        annotationsCount: Math.max(vibes.annotationsCount, Number(prevVibes?.annotationsCount ?? 0)),
+        verifiedCount: Math.max(vibes.verifiedCount, Number(prevVibes?.verifiedCount ?? 0)),
+        maxPrismRisk: vibes.maxRisk ?? Number(prevVibes?.maxPrismRisk ?? 0),
+        highRiskCount: Math.max(vibes.findings, Number(prevVibes?.highRiskCount ?? 0)),
+        traceIncidents: Math.max(vibes.findings, Number(prevVibes?.traceIncidents ?? 0)),
+        traceResolved: Math.max(vibes.resolved, Number(prevVibes?.traceResolved ?? 0)),
+        linesAdded: Math.max(vibes.inserted, Number(prevVibes?.linesAdded ?? 0)),
+        linesRemoved: Math.max(vibes.deleted, Number(prevVibes?.linesRemoved ?? 0)),
+        filesTouchedCount: Math.max(vibes.fileHotspots.length, Number(prevVibes?.filesTouchedCount ?? 0)),
+        prismBuckets: vibes.annotationsCount > 0 ? vibes.prismBuckets : (prevVibes?.prismBuckets ?? vibes.prismBuckets),
+        fileHotspots: vibes.fileHotspots.length > 0 ? vibes.fileHotspots : (prevVibes?.fileHotspots ?? []),
+      }
+    : prevVibes
+
+  const updatedMap = {
+    ...existingMetaMap,
+    [wsName]: {
+      ...prevWs,
+      load: parsedCfg.load ?? state.loadEnvelope ?? (prevWs.load as string) ?? '',
+      boundaryLoad: parsedCfg.boundaryLoad ?? (prevWs.boundaryLoad as Record<string, string>) ?? {},
+      boundaries: (parsedCfg.boundaries as Record<string, unknown>) ?? (prevWs.boundaries as Record<string, unknown>) ?? { external: {}, internal: {} },
+      driftAdded: state.unreviewedBoundaries.length > 0 ? state.unreviewedBoundaries : ((prevWs.driftAdded as string[]) ?? []),
+      prismRisk: vibes.maxRisk ?? (prevWs.prismRisk as number | null) ?? null,
+      vibes: mergedVibes,
     },
   }
+  await $.fs.write(`${dir}/workspaces-meta.json`, JSON.stringify(updatedMap)).catch(() => {})
+  return updatedMap
 }
 
 async function persistTelemetryAndDashboard($: EngineInterface, state: NeckbeardHudState) {

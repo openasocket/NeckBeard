@@ -118,7 +118,11 @@ For **trust boundaries**, NeckBeard never asks you to do its threat modeling: it
 In Claude Code (CLI and Desktop), NeckBeard loads [`hooks/claude-band.json`](hooks/claude-band.json) ([`hooks/band/register.tsx`](hooks/band/register.tsx)) to render an interactive HUD above the prompt input box and maintain a **100% local** JSONL telemetry store (`~/.config/neckbeard/telemetry/sessions.jsonl`) and self-contained 5-tab **NeckBeard Security & Engineering Command Center** (`~/.config/neckbeard/telemetry/dashboard.html`):
 
 - **High-Value Baseline Engineering Intelligence (Even Without VIBES):**
-  - **4-Card 3-Gate & Economics Scoreboard:** Code Minimalism & Reuse (`+inserted / -deleted LOC`, symbol reuse %), `PreToolUse` Shield & Safety (`N blocked`), Token Cache & Cost Efficiency (`$` spend, total tokens, `% prompt cache hit rate`), and Active Engineering Velocity (`hours/minutes`, `.neckbeard.json` target load).
+  - **4-Card 3-Gate & Economics Scoreboard:**
+    - **API Spend & Unit Economics:** Total spend (`$`), cost per session, cost per turn, and percentage share of All-Workspaces spend.
+    - **Prompt-Cache Dollar Savings:** Estimated dollar savings (`$ saved`) from cached read tokens and prompt-cache hit rate (`%`) benchmarked against the portfolio average.
+    - **Agent Compute vs. Wall-Clock Time (`VELOCITY`):** Compares cumulative **Agent Compute Hours** (total active agent execution time across all sessions, including parallel subagents/playbooks) against merged **Human Wall-Clock Time** (de-overlapped calendar execution time, showing the parallel concurrency multiplier e.g. `1.8x parallel`, active calendar days, and `% of All-Workspaces agent time`), alongside the workspace's `.neckbeard.json` target load.
+    - **Security Shield & Code Delta (`3 GATES`):** `PreToolUse` guard blocks, net refactor line delta (`+inserted / -deleted LOC`), and VIBES / TRACE issue resolution.
   - **14-Day Cost, Session & Cache Velocity SVG Chart + Repo & Model Economics Tables:** Visualizes daily API spend and prompt-cache efficiency, ranks every local repository in a clickable scorecard, and breaks down token/cache/cost efficiency per model (`Opus`, `Sonnet`, `Haiku`).
   - **Interactive External `[ext]` → Internal `[int]` Trust-Boundary Graph & Searchable Session Forensics:** Maps saved `.neckbeard.json` boundaries and highlights unreviewed boundary-expansion drift (`⚠ +N boundary`).
 - **Exponential 5-Pillar Deep Forensics When VIBES (`.ai-audit/`) Is Enabled:**

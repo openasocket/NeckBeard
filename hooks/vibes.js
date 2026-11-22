@@ -24,7 +24,22 @@ const GENERIC_HEADING_RE = /^(?:#{1,6}\s*(?:Context|Instructions|Overview|Task|T
 
 function hasVibes(root = process.cwd()) {
   const dir = path.join(root, '.ai-audit');
-  return fs.existsSync(path.join(dir, 'manifest.json')) || fs.existsSync(path.join(dir, 'annotations.jsonl'));
+  try {
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return false;
+    return (
+      fs.existsSync(path.join(dir, 'manifest.json')) ||
+      fs.existsSync(path.join(dir, 'annotations.jsonl')) ||
+      fs.existsSync(path.join(dir, 'config.json')) ||
+      fs.existsSync(path.join(dir, 'audit.db')) ||
+      fs.existsSync(path.join(dir, '.session_state.json')) ||
+      fs.existsSync(path.join(dir, 'incidents')) ||
+      fs.existsSync(path.join(dir, 'provenance')) ||
+      fs.existsSync(path.join(dir, 'attestations')) ||
+      fs.existsSync(path.join(dir, 'cosign'))
+    );
+  } catch {
+    return false;
+  }
 }
 
 function readJsonSafe(file) {
@@ -121,8 +136,16 @@ function extractCleanTextSummary(rawText) {
 function readVibesTelemetry(root = process.cwd()) {
   if (!hasVibes(root)) return null;
   const dir = path.join(root, '.ai-audit');
+  const config = readJsonSafe(path.join(dir, 'config.json')) || {};
   const manifest = readJsonSafe(path.join(dir, 'manifest.json')) || {};
   const annotations = readJsonlSafe(path.join(dir, 'annotations.jsonl'));
+  const sessionState = readJsonSafe(path.join(dir, '.session_state.json')) || {};
+  const provSummary = readJsonSafe(path.join(dir, 'provenance', 'provenance-summary.json')) || null;
+  const commitModelMap = readJsonlSafe(path.join(dir, 'provenance', 'commit-model-map.jsonl'));
+
+  const standardVersion = String(config.standard_version || config.version || manifest.version || (provSummary && provSummary.standard_version) || '1.1');
+  const configuredAssurance = String(config.assurance_level || '').toLowerCase();
+  const projectName = String(config.project_name || (provSummary && provSummary.project_name) || path.basename(root));
 
   const sessions = new Map();
   let maxPrismRisk = 0;
@@ -143,6 +166,7 @@ function readVibesTelemetry(root = process.cwd()) {
   const manifestInspectorRows = [];
   const decisionRecords = [];
   const incidentRecords = [];
+  const seenIncidentIds = new Set();
   const recentAnnotations = [];
 
   // Parse content-addressed manifest.entries hash table (canonical VIBES v1.0 / v1.1 schema)
@@ -158,6 +182,17 @@ function readVibesTelemetry(root = process.cwd()) {
         const modelLabel = (entry.model_name && entry.model_name !== 'unknown' ? entry.model_name : '') ||
           entry.tool_name || '';
         if (modelLabel) envModels.set(hash, modelLabel);
+        manifestInspectorRows.push({
+          sessionId: hash.slice(0, 10),
+          timestamp: createdStamp,
+          model: String(modelLabel || 'env'),
+          file: `[env:${entry.tool_name || 'agent'}]`,
+          linesAdded: 0,
+          linesRemoved: 0,
+          riskScore: null,
+          verified: configuredAssurance === 'high',
+          summary: `Environment snapshot: ${entry.tool_name || 'agent'} ${entry.tool_version || ''} · model ${entry.model_name || 'default'}`.trim(),
+        });
       } else if (eType === 'prompt') {
         const promptSum = extractCleanTextSummary(entry.prompt_text || '');
         if (promptSum) {
@@ -412,23 +447,27 @@ function readVibesTelemetry(root = process.cwd()) {
     }
 
     if (a.type === 'incident' || a.record_type === 'incident' || a.ioc_id || a.trace_incident || a.action === 'block' || a.quarantined === true) {
-      traceIncidents += 1;
-      s.secFound += 1;
-      const isResolved = Boolean(a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed' || a.action === 'block' || a.quarantined === true);
-      if (isResolved) {
-        traceResolved += 1;
-        s.secFixed += 1;
-      }
-      if (incidentRecords.length < 15) {
-        const factorSignal = Array.isArray(a.risk_factors) && a.risk_factors[0] && a.risk_factors[0].signal;
-        incidentRecords.push({
-          id: String(a.id || a.incident_id || (a.annotation_id && String(a.annotation_id).slice(0, 10)) || `INC-${traceIncidents}`),
-          iocId: String(a.ioc_id || a.rule_id || factorSignal || (a.action === 'block' ? 'VIBES-BLOCK' : 'TRACE-IOC')),
-          severity: String(a.severity || (risk && risk >= 0.8 ? 'critical' : 'high')),
-          status: isResolved ? 'resolved' : String(a.status || 'open'),
-          summary: summaryText || String(a.ioc_id || 'TRACE security incident'),
-          timestamp: String(tsRaw || ''),
-        });
+      const incId = String(a.id || a.incident_id || (a.annotation_id && String(a.annotation_id).slice(0, 10)) || `INC-${traceIncidents + 1}`);
+      if (!seenIncidentIds.has(incId)) {
+        seenIncidentIds.add(incId);
+        traceIncidents += 1;
+        s.secFound += 1;
+        const isResolved = Boolean(a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed' || a.action === 'block' || a.quarantined === true);
+        if (isResolved) {
+          traceResolved += 1;
+          s.secFixed += 1;
+        }
+        if (incidentRecords.length < 15) {
+          const factorSignal = Array.isArray(a.risk_factors) && a.risk_factors[0] && a.risk_factors[0].signal;
+          incidentRecords.push({
+            id: incId,
+            iocId: String(a.ioc_id || a.rule_id || factorSignal || (a.action === 'block' ? 'VIBES-BLOCK' : 'TRACE-IOC')),
+            severity: String(a.severity || (risk && risk >= 0.8 ? 'critical' : 'high')),
+            status: isResolved ? 'resolved' : String(a.status || 'open'),
+            summary: summaryText || String(a.ioc_id || 'TRACE security incident'),
+            timestamp: String(tsRaw || ''),
+          });
+        }
       }
     }
 
@@ -447,27 +486,151 @@ function readVibesTelemetry(root = process.cwd()) {
     }
   }
 
-  // If annotations.jsonl only had session start/end events (like VibeCheck), populate recentAnnotations from manifestInspectorRows
-  if (recentAnnotations.length === 0 && manifestInspectorRows.length > 0) {
-    recentAnnotations.push(...manifestInspectorRows.slice(-16));
+  // Parse .ai-audit/incidents/<INCIDENT_ID>/incident.json (canonical TRACE v1.0 directory layout, e.g. VibeTrace)
+  const incidentsRoot = path.join(dir, 'incidents');
+  if (fs.existsSync(incidentsRoot)) {
+    try {
+      for (const entry of fs.readdirSync(incidentsRoot, { withFileTypes: true })) {
+        if (entry.name.startsWith('.')) continue;
+        const entryPath = path.join(incidentsRoot, entry.name);
+        let incData = null;
+        if (entry.isDirectory()) {
+          incData = readJsonSafe(path.join(entryPath, 'incident.json')) || readJsonSafe(path.join(entryPath, 'bundle.json'));
+        } else if (entry.name.endsWith('.json')) {
+          incData = readJsonSafe(entryPath);
+        }
+        const incId = String((incData && incData.incident_id) || entry.name.replace(/\.json$/, ''));
+        if (!seenIncidentIds.has(incId)) {
+          seenIncidentIds.add(incId);
+          traceIncidents += 1;
+          const status = String((incData && incData.status) || 'open').toLowerCase();
+          const isResolved = status === 'resolved' || status === 'mitigated' || status === 'closed';
+          if (isResolved) traceResolved += 1;
+          if (incidentRecords.length < 15) {
+            const iocId = (incData && incData.trigger && incData.trigger.ioc_id) ||
+              (incData && Array.isArray(incData.indicators) && incData.indicators[0]) ||
+              (incData && incData.classification) ||
+              incId;
+            const cls = (incData && incData.classification) ? `${incData.classification} incident` : 'TRACE incident';
+            const by = (incData && incData.declared_by) ? ` declared by ${incData.declared_by}` : '';
+            const aff = (incData && Array.isArray(incData.affected_sessions) && incData.affected_sessions.length)
+              ? ` (session: ${incData.affected_sessions[0]})`
+              : '';
+            incidentRecords.push({
+              id: incId,
+              iocId: String(iocId),
+              severity: String((incData && incData.severity) || (incData && incData.classification === 'prompt_injection' ? 'critical' : 'high')),
+              status: isResolved ? 'resolved' : status,
+              summary: `${cls}${by}${aff}`,
+              timestamp: String((incData && incData.declared_at) || '').replace('T', ' ').slice(0, 19),
+            });
+          }
+        }
+      }
+    } catch {}
   }
 
-  const incDirCount = countDirEntriesSafe(path.join(dir, 'incidents'));
-  traceIncidents = Math.max(traceIncidents, incDirCount);
-  const blobsCount = countDirEntriesSafe(path.join(dir, 'blobs')) || manifestCounts.total;
-  const attestationsCount = countDirEntriesSafe(path.join(dir, 'attestations')) +
+  // Parse .ai-audit/provenance/commit-model-map.jsonl & provenance-summary.json (e.g. VibeTrace synthetic/commit provenance)
+  if (commitModelMap.length > 0) {
+    let provAdded = 0;
+    let provDeleted = 0;
+    for (const c of commitModelMap) {
+      if (!c || typeof c !== 'object') continue;
+      const cAdd = Number(c.additions || 0);
+      const cDel = Number(c.deletions || 0);
+      provAdded += cAdd;
+      provDeleted += cDel;
+      if (Array.isArray(c.files_changed)) {
+        for (const f of c.files_changed) {
+          if (typeof f === 'string' && f) filesTouched.add(f);
+        }
+      }
+    }
+    if (linesAdded === 0 && linesRemoved === 0) {
+      linesAdded = provAdded;
+      linesRemoved = provDeleted;
+    }
+  }
+  if (provSummary && typeof provSummary === 'object' && provSummary.commit_count) {
+    decisionRecords.push({
+      id: 'VERIFY-PROV',
+      title: `${provSummary.commit_count} git commits attested to ${provSummary.model_name || 'Claude Code'} (${provSummary.branch || 'main'})`,
+      status: 'attested',
+      timestamp: String(provSummary.generated_at || '').replace('T', ' ').slice(0, 19),
+    });
+  }
+
+  // Parse .ai-audit/.session_state.json active hook snapshots (e.g. AntigravityCLI-VIBES)
+  let snapshotCount = 0;
+  if (sessionState && sessionState.run_command_snapshots && typeof sessionState.run_command_snapshots === 'object') {
+    const snapEntries = Object.entries(sessionState.run_command_snapshots);
+    snapshotCount = snapEntries.length;
+    for (const [snapKey, snap] of snapEntries.slice(-8)) {
+      if (!snap || typeof snap !== 'object') continue;
+      const statusLines = String(snap.status || '').split(/[\0\n]/).map((s) => s.trim()).filter(Boolean);
+      for (const sl of statusLines) {
+        const m = /^[MADRCU?!]{1,2}\s+(.+)$/.exec(sl);
+        if (m && m[1]) filesTouched.add(m[1]);
+      }
+      if (recentAnnotations.length < 16 && manifestInspectorRows.length < 16) {
+        manifestInspectorRows.push({
+          sessionId: `snap-${snapKey}`,
+          timestamp: String(snap.timestamp || '').slice(0, 19),
+          model: 'hook-snapshot',
+          file: statusLines[0] ? statusLines[0].replace(/^[MADRCU?!]+\s+/, '').slice(0, 42) : '[working-tree]',
+          linesAdded: statusLines.length,
+          linesRemoved: 0,
+          riskScore: null,
+          verified: configuredAssurance === 'high',
+          summary: `Active VIBES working-tree snapshot #${snapKey} (${statusLines.length} tracked file change(s))`,
+        });
+      }
+    }
+  }
+
+  // Prefer non-environment manifest entries (reasoning/command/prompt) first, then environment/session rows if needed
+  if (recentAnnotations.length === 0 && manifestInspectorRows.length > 0) {
+    const substantive = manifestInspectorRows.filter((r) => !String(r.file || '').startsWith('[env:'));
+    const chosen = substantive.length > 0 ? substantive : manifestInspectorRows;
+    recentAnnotations.push(...chosen.slice(-16));
+  }
+  if (recentAnnotations.length === 0 && annotations.length > 0) {
+    for (const a of annotations.slice(-12)) {
+      const sid = a.session_id || a.sessionId || 'session';
+      const resolvedEnvModel = (a.environment_hash && envModels.get(a.environment_hash)) || '';
+      recentAnnotations.push({
+        sessionId: String(sid).slice(0, 14),
+        timestamp: String(a.timestamp || a.created_at || '').replace('T', ' ').slice(0, 19),
+        model: String(resolvedEnvModel || a.agent_name || a.model || 'agent'),
+        file: `[session:${a.event || 'active'}]`,
+        linesAdded: 0,
+        linesRemoved: 0,
+        riskScore: null,
+        verified: String(a.assurance_level || configuredAssurance) === 'high',
+        summary: String(a.description || `${a.event || 'session'} (${a.assurance_level || configuredAssurance || 'high'} assurance)`),
+      });
+    }
+  }
+
+  const blobsDirCount = countDirEntriesSafe(path.join(dir, 'blobs'));
+  const blobsCount = Math.max(blobsDirCount, manifestCounts.total);
+  const rawAttestCount = countDirEntriesSafe(path.join(dir, 'attestations')) +
     countDirEntriesSafe(path.join(dir, 'provenance')) +
     countDirEntriesSafe(path.join(dir, 'cosign')) +
-    countDirEntriesSafe(path.join(dir, 'evidence')) ||
-    assuranceBreakdown.high;
+    countDirEntriesSafe(path.join(dir, 'evidence'));
+  const attestationsCount = rawAttestCount || assuranceBreakdown.high || (configuredAssurance === 'high' ? Math.max(1, annotations.length || manifestCounts.total) : 0);
   const iocRulesCount = countDirEntriesSafe(path.join(dir, 'iocs.d'));
   const hasAuditDb = fs.existsSync(path.join(dir, 'audit.db')) || fs.existsSync(path.join(dir, 'wal'));
 
-  if (decisionRecords.length === 0 && manifestCounts.total > 0) {
+  if (verifiedCount === 0 && configuredAssurance === 'high' && (annotations.length > 0 || manifestCounts.total > 0)) {
+    verifiedCount = annotations.length || manifestCounts.total;
+  }
+
+  if (decisionRecords.length === 0 || (decisions === 0 && manifestCounts.total > 0)) {
     if (manifestCounts.reasoning > 0) {
       decisionRecords.push({
         id: 'VIBES-REASON',
-        title: `${manifestCounts.reasoning} content-addressed agent reasoning chains hashed in .ai-audit/manifest.json`,
+        title: `${manifestCounts.reasoning.toLocaleString()} content-addressed agent reasoning chains hashed in .ai-audit/manifest.json`,
         status: 'attested',
         timestamp: '',
       });
@@ -475,7 +638,7 @@ function readVibesTelemetry(root = process.cwd()) {
     if (manifestCounts.command > 0) {
       decisionRecords.push({
         id: 'VIBES-CMD',
-        title: `${manifestCounts.command} tool/command execution records hashed in .ai-audit/manifest.json`,
+        title: `${manifestCounts.command.toLocaleString()} tool/command execution records hashed in .ai-audit/manifest.json`,
         status: 'attested',
         timestamp: '',
       });
@@ -483,8 +646,24 @@ function readVibesTelemetry(root = process.cwd()) {
     if (manifestCounts.environment > 0) {
       decisionRecords.push({
         id: 'VIBES-ENV',
-        title: `${manifestCounts.environment} agent runtime environment snapshots hashed in .ai-audit/manifest.json`,
+        title: `${manifestCounts.environment.toLocaleString()} agent runtime environment snapshots hashed in .ai-audit/manifest.json`,
         status: 'attested',
+        timestamp: '',
+      });
+    }
+    if (snapshotCount > 0) {
+      decisionRecords.push({
+        id: 'VIBES-STATE',
+        title: `${snapshotCount} active working-tree command snapshots tracked in .ai-audit/.session_state.json`,
+        status: 'active',
+        timestamp: '',
+      });
+    }
+    if (decisionRecords.length === 0 && Object.keys(config).length > 0) {
+      decisionRecords.push({
+        id: 'VIBES-CFG',
+        title: `VIBES v${standardVersion} configured for ${projectName} (assurance_level: ${configuredAssurance || 'high'})`,
+        status: 'configured',
         timestamp: '',
       });
     }
@@ -496,12 +675,16 @@ function readVibesTelemetry(root = process.cwd()) {
 
   return {
     present: true,
+    standardVersion,
+    configuredAssurance: configuredAssurance || (assuranceBreakdown.high > 0 ? 'high' : assuranceBreakdown.medium > 0 ? 'medium' : 'high'),
+    projectName,
     annotationsCount: annotations.length,
     verifiedCount,
     blobsCount,
     attestationsCount,
     iocRulesCount,
     hasAuditDb,
+    snapshotCount,
     manifestCounts,
     assuranceBreakdown,
     prismBuckets,

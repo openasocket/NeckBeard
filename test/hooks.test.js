@@ -272,7 +272,23 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
   const stateDir = tmpState();
   const env = { ...process.env, NECKBEARD_STATE_DIR: stateDir, XDG_CONFIG_HOME: cfgHome, CLAUDE_CONFIG_DIR: tmpState() };
 
-  fs.mkdirSync(path.join(dir, '.ai-audit'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.ai-audit', 'incidents', 'TRACE-2026-0001'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.ai-audit', 'config.json'),
+    JSON.stringify({ standard: 'VIBES', standard_version: '1.2', assurance_level: 'high', project_name: 'demo-app' })
+  );
+  fs.writeFileSync(
+    path.join(dir, '.ai-audit', 'incidents', 'TRACE-2026-0001', 'incident.json'),
+    JSON.stringify({
+      incident_id: 'TRACE-2026-0001',
+      classification: 'prompt_injection',
+      status: 'resolved',
+      declared_at: '2026-11-21T20:03:00Z',
+      declared_by: 'user:secops',
+      trigger: { type: 'ioc_match', ioc_id: 'TRACE-IOC-PI-003' },
+      affected_sessions: ['sess-12345678'],
+    })
+  );
   fs.writeFileSync(
     path.join(dir, '.ai-audit', 'manifest.json'),
     JSON.stringify({
@@ -324,18 +340,21 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
 
   const vibes = readVibesTelemetry(dir);
   assert.strictEqual(vibes.present, true);
+  assert.strictEqual(vibes.standardVersion, '1.2');
+  assert.strictEqual(vibes.configuredAssurance, 'high');
   assert.strictEqual(vibes.maxPrismRisk, 0.72);
   assert.strictEqual(vibes.highRiskCount, 1);
   assert.strictEqual(vibes.verifiedCount, 2);
   assert.strictEqual(vibes.prismBuckets.high, 1);
-  assert.strictEqual(vibes.traceIncidents, 1);
-  assert.strictEqual(vibes.traceResolved, 1);
+  assert.strictEqual(vibes.traceIncidents, 2);
+  assert.strictEqual(vibes.traceResolved, 2);
   assert.strictEqual(vibes.decisions, 2);
   assert.strictEqual(vibes.decisionRecords.length, 2);
   assert.match(vibes.decisionRecords[0].title, /Verify DSSE Ed25519 trust cache rotation → Retire rotated keys immediately/);
   assert.strictEqual(vibes.manifestCounts.reasoning, 1);
   assert.ok(vibes.recentAnnotations.some((a) => a.file === 'src/trust.rs :: rotate_key()'));
-  assert.strictEqual(vibes.incidentRecords.length, 1);
+  assert.strictEqual(vibes.incidentRecords.length, 2);
+  assert.ok(vibes.incidentRecords.some((inc) => inc.id === 'TRACE-2026-0001' && inc.iocId === 'TRACE-IOC-PI-003'));
   assert.strictEqual(vibes.linesAdded, 19);
   assert.strictEqual(vibes.linesRemoved, 42);
   assert.match(formatVibesContext(dir), /PRISM max risk 0\.72/);
@@ -345,8 +364,11 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
   assert.match(summary, /1 PreToolUse blocks/);
   assert.match(summary, /\+19 \/ -42 lines/);
   const boardFile = path.join(cfgHome, 'neckbeard', 'telemetry', 'dashboard.html');
+  const metaFile = path.join(cfgHome, 'neckbeard', 'telemetry', 'workspaces-meta.json');
   assert.ok(fs.existsSync(boardFile));
+  assert.ok(fs.existsSync(metaFile));
   const boardHtml = fs.readFileSync(boardFile, 'utf8');
+  assert.ok(boardHtml.includes('Agent Compute vs. Wall-Clock Time'));
   assert.ok(boardHtml.includes('Trust-Boundary Graph'));
   assert.ok(boardHtml.includes('boundary-svg'));
   assert.ok(boardHtml.includes('VIBES Protocol (.ai-audit/) Provenance'));

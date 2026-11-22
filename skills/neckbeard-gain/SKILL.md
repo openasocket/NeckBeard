@@ -25,7 +25,7 @@ Run `node hooks/band-import.js --summary` (from the NeckBeard plugin root or rep
 Present the summary clearly with:
 - **Load Target & Sharing Mode** (`.neckbeard.json` shared vs. local)
 - **Trust-Boundary Map Summary** (`external` ingress/egress/supply and `internal` auth/data/exec/ai counts)
-- **Tokens, Cost & Agent Time**
+- **Tokens, Cost & Agent vs. Wall-Clock Time** (total API spend, prompt-cache dollar savings & hit rate, cumulative Agent Compute Hours vs. merged Human Wall-Clock Time & parallel concurrency multiplier)
 - **Refactor & Code Reuse** (reused vs. new definitions, net lines added/removed)
 - **Security & VIBES Health** (`PreToolUse` blocks, security/TRACE findings identified vs. resolved, PRISM max risk score)
 - **Local Command Center Path** (`~/.config/neckbeard/telemetry/dashboard.html`)

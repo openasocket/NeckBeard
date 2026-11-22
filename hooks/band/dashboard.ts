@@ -12,12 +12,24 @@ import type { TelemetrySessionRecord } from './types'
 
 export type VibesVisualTelemetry = {
   present?: boolean
+  standardVersion?: string
+  configuredAssurance?: string
+  projectName?: string
   annotationsCount?: number
   verifiedCount?: number
   blobsCount?: number
   attestationsCount?: number
   iocRulesCount?: number
   hasAuditDb?: boolean
+  snapshotCount?: number
+  manifestCounts?: {
+    environment?: number
+    reasoning?: number
+    command?: number
+    prompt?: number
+    decision?: number
+    total?: number
+  }
   maxPrismRisk?: number
   highRiskCount?: number
   traceIncidents?: number
@@ -603,7 +615,7 @@ export function renderDashboardHtml(
         <div class="m-comp" id="m-cache-comp">Prompt caching efficiency</div>
       </div>
       <div class="panel">
-        <div class="m-tag"><span>Active Engineering Velocity</span><span style="color:var(--nb-amber)">THROUGHPUT</span></div>
+        <div class="m-tag"><span>Agent Compute vs. Wall-Clock Time</span><span style="color:var(--nb-amber)">VELOCITY</span></div>
         <div class="m-val" id="m-time">0h 0m</div>
         <div class="m-sub" id="m-turns">0 sessions · 0 turns</div>
         <div class="m-comp" id="m-load">Target load: unset</div>
@@ -639,7 +651,7 @@ export function renderDashboardHtml(
                 <tr>
                   <th>Workspace</th>
                   <th>Sessions / Turns</th>
-                  <th>Active Time</th>
+                  <th>Agent / Wall Time</th>
                   <th>Cache Hit %</th>
                   <th>Est. Saved</th>
                   <th>Actual Spend</th>
@@ -902,7 +914,9 @@ export function renderDashboardHtml(
   }
 
   function summarizeList(list) {
-    var s = { sessions: list.length, turns: 0, cost: 0, saved: 0, tok: 0, cRead: 0, inAll: 0, outTok: 0, dur: 0, ins: 0, del: 0, blk: 0, found: 0, fixed: 0 };
+    var s = { sessions: list.length, turns: 0, cost: 0, saved: 0, tok: 0, cRead: 0, inAll: 0, outTok: 0, dur: 0, wallDur: 0, parallelFactor: 1, activeDays: 1, ins: 0, del: 0, blk: 0, found: 0, fixed: 0 };
+    var ivs = [];
+    var days = {};
     list.forEach(function(r) {
       s.cost += r.totalCostUsd || 0;
       s.saved += estimateCacheSavingsUsd(r);
@@ -912,14 +926,29 @@ export function renderDashboardHtml(
       s.cRead += crT;
       s.inAll += pT + crT + cwT;
       s.outTok += cT;
-      s.dur += r.activeDurationMs || 0;
+      var d = Math.max(0, r.activeDurationMs || 0);
+      s.dur += d;
       s.turns += r.turnCount || 1;
+      if (r.startedAtMs && d > 0) ivs.push([r.startedAtMs, r.startedAtMs + d]);
+      if (r.timestampIso) days[String(r.timestampIso).slice(0, 10)] = 1;
       s.ins += r.linesInserted || 0;
       s.del += r.linesDeleted || 0;
       s.blk += r.guardBlockCount || 0;
       s.found += r.securityFindingsTotal || 0;
       s.fixed += r.securityFindingsResolved || 0;
     });
+    ivs.sort(function(a, b) { return a[0] - b[0]; });
+    var cs = -1, ce = -1;
+    for (var i = 0; i < ivs.length; i++) {
+      var st = ivs[i][0], en = ivs[i][1];
+      if (cs === -1) { cs = st; ce = en; }
+      else if (st <= ce) { if (en > ce) ce = en; }
+      else { s.wallDur += (ce - cs); cs = st; ce = en; }
+    }
+    if (cs !== -1) s.wallDur += (ce - cs);
+    if (s.wallDur <= 0) s.wallDur = s.dur;
+    s.parallelFactor = s.wallDur > 0 ? +(s.dur / s.wallDur).toFixed(2) : 1;
+    s.activeDays = Math.max(1, Object.keys(days).length);
     s.cacheHitPct = s.inAll > 0 ? Math.round((s.cRead / s.inAll) * 100) : 0;
     s.costPerSession = s.sessions > 0 ? s.cost / s.sessions : 0;
     s.costPerTurn = s.turns > 0 ? s.cost / s.turns : 0;
@@ -956,6 +985,7 @@ export function renderDashboardHtml(
       linesAdded: 0,
       linesRemoved: 0,
       filesTouchedCount: 0,
+      manifestCounts: { environment: 0, reasoning: 0, command: 0, prompt: 0, decision: 0, total: 0 },
       prismBuckets: { low: 0, moderate: 0, high: 0, critical: 0 },
       fileHotspots: [],
       decisionRecords: [],
@@ -972,6 +1002,13 @@ export function renderDashboardHtml(
       agg.blobsCount += v.blobsCount || 0;
       agg.attestationsCount += v.attestationsCount || 0;
       agg.iocRulesCount += v.iocRulesCount || 0;
+      var mc = v.manifestCounts || {};
+      agg.manifestCounts.environment += mc.environment || 0;
+      agg.manifestCounts.reasoning += mc.reasoning || 0;
+      agg.manifestCounts.command += mc.command || 0;
+      agg.manifestCounts.prompt += mc.prompt || 0;
+      agg.manifestCounts.decision += mc.decision || 0;
+      agg.manifestCounts.total += mc.total || 0;
       if ((v.maxPrismRisk || 0) > agg.maxPrismRisk) agg.maxPrismRisk = v.maxPrismRisk;
       agg.highRiskCount += v.highRiskCount || 0;
       agg.traceIncidents += v.traceIncidents || 0;
@@ -1050,17 +1087,22 @@ export function renderDashboardHtml(
     }
 
     var annCnt = v.annotationsCount || 0;
-    var verPct = annCnt > 0 ? Math.round(((v.verifiedCount || 0) / annCnt) * 100) : 0;
-    el('vp-prov').textContent = annCnt.toLocaleString() + ' annotations';
-    el('vp-prov-sub').textContent = (v.blobsCount || 0).toLocaleString() + ' SHA-256 blobs · ' + (v.filesTouchedCount || 0) + ' files';
+    var mc = v.manifestCounts || {};
+    var mTot = mc.total || 0;
+    var baseCnt = annCnt > 0 ? annCnt : (mTot > 0 ? mTot : 1);
+    var verPct = Math.min(100, Math.round(((v.verifiedCount || 0) / baseCnt) * 100));
+    el('vp-prov').textContent = annCnt > 0 ? (annCnt.toLocaleString() + ' annotations') : (mTot.toLocaleString() + ' manifest entries');
+    el('vp-prov-sub').textContent = (mTot || v.blobsCount || 0).toLocaleString() + ' manifest entries · ' + (v.filesTouchedCount || 0) + ' files · v' + (v.standardVersion || '1.1');
     el('vp-verify').textContent = verPct + '% verified';
-    el('vp-verify-sub').textContent = (v.attestationsCount || 0).toLocaleString() + ' attestations · Guard locked';
+    el('vp-verify-sub').textContent = (v.attestationsCount || 0).toLocaleString() + ' attestations (' + String(v.configuredAssurance || 'high').toUpperCase() + ') · Guard locked';
     el('vp-prism').textContent = Number(v.maxPrismRisk || 0).toFixed(2) + ' max risk';
     el('vp-prism-sub').textContent = (v.highRiskCount || 0) + ' High/Critical (>= 0.60)';
-    el('vp-evolve').textContent = (v.decisions || 0) + ' decisions';
-    el('vp-evolve-sub').textContent = '+' + (v.linesAdded || 0).toLocaleString() + ' / -' + (v.linesRemoved || 0).toLocaleString() + ' attributed LOC';
+    var rChains = mc.reasoning || 0;
+    var cChains = mc.command || 0;
+    el('vp-evolve').textContent = (v.decisions || 0) > 0 ? ((v.decisions || 0) + ' decisions') : (rChains > 0 ? (rChains.toLocaleString() + ' reasoning chains') : (((v.decisionRecords && v.decisionRecords.length) || 0) + ' records'));
+    el('vp-evolve-sub').textContent = '+' + (v.linesAdded || 0).toLocaleString() + ' / -' + (v.linesRemoved || 0).toLocaleString() + ' LOC' + (cChains > 0 ? (' · ' + cChains.toLocaleString() + ' cmds') : '');
     el('vp-trace').textContent = (v.traceResolved || 0) + ' / ' + (v.traceIncidents || 0) + ' fixed';
-    el('vp-trace-sub').textContent = (v.iocRulesCount || 0) + ' custom IoC rules in iocs.d/';
+    el('vp-trace-sub').textContent = (v.iocRulesCount || 0) + ' custom IoC rules' + (v.hasAuditDb ? ' · audit.db active' : '');
 
     var svgBox = el('vibes-svg');
     if (svgBox) {
@@ -1267,7 +1309,8 @@ export function renderDashboardHtml(
     var repoMap = {};
     records.forEach(function(r) {
       var p = r.projectName || 'workspace';
-      if (!repoMap[p]) repoMap[p] = { name: p, sessions: 0, turns: 0, dur: 0, cost: 0, saved: 0, cacheRead: 0, totalIn: 0 };
+      if (!repoMap[p]) repoMap[p] = { name: p, list: [], sessions: 0, turns: 0, dur: 0, cost: 0, saved: 0, cacheRead: 0, totalIn: 0 };
+      repoMap[p].list.push(r);
       repoMap[p].sessions += 1;
       repoMap[p].turns += r.turnCount || 1;
       repoMap[p].dur += r.activeDurationMs || 0;
@@ -1287,7 +1330,7 @@ export function renderDashboardHtml(
       [
         '★ ALL WORKSPACES (' + Object.keys(repoMap).length + ')',
         portfolioStats.sessions + ' / ' + portfolioStats.turns,
-        fmtDur(portfolioStats.dur),
+        fmtDur(portfolioStats.dur) + ' agent / ' + fmtDur(portfolioStats.wallDur) + ' wall (' + portfolioStats.parallelFactor + 'x)',
         portfolioStats.cacheHitPct + '%',
         fmtUsd(portfolioStats.saved),
         fmtUsd(portfolioStats.cost),
@@ -1315,10 +1358,11 @@ export function renderDashboardHtml(
         var sharePct = portfolioStats.cost > 0 ? (rp.cost / portfolioStats.cost) * 100 : 0;
         var wm = meta[rp.name] || {};
         var statusTag = (wm.vibes && wm.vibes.present ? '● VIBES' : '○ Std');
+        var rpSt = summarizeList(rp.list);
         [
           (rp.name === activeWorkspace ? '▶ ' : '') + rp.name,
           rp.sessions + ' / ' + rp.turns,
-          fmtDur(rp.dur),
+          fmtDur(rp.dur) + ' / ' + fmtDur(rpSt.wallDur) + ' (' + rpSt.activeDays + 'd)',
           cHit,
           fmtUsd(rp.saved),
           fmtUsd(rp.cost)
@@ -1791,10 +1835,12 @@ export function renderDashboardHtml(
       ? ('All-Workspaces avg cache hit: ' + portfolioStats.cacheHitPct + '% (' + fmtUsd(portfolioStats.saved) + ' total saved)')
       : (fmtTokens(portfolioStats.cRead) + ' cached read tokens across portfolio');
 
-    el('m-time').textContent = fmtDur(wsStats.dur);
+    el('m-time').textContent = fmtDur(wsStats.dur) + ' agent';
     var shareTimePct = portfolioStats.dur > 0 ? ((wsStats.dur / portfolioStats.dur) * 100).toFixed(1) : '100.0';
-    el('m-turns').textContent = wsStats.sessions + ' sessions · ' + wsStats.turns.toLocaleString() + ' turns (' + shareTimePct + '% of time)';
-    el('m-load').textContent = 'Target load: ' + (wm.load || 'unset (/neckbeard load <value>)');
+    el('m-turns').textContent = 'vs. ' + fmtDur(wsStats.wallDur) + ' wall time (' + wsStats.parallelFactor + 'x parallel · ' + wsStats.activeDays + 'd) · ' + wsStats.sessions + ' sess · ' + wsStats.turns.toLocaleString() + ' turns';
+    el('m-load').textContent = activeWorkspace
+      ? (shareTimePct + '% of All-Workspaces agent time (' + fmtDur(portfolioStats.dur) + ') · Load: ' + (wm.load || 'unset (/neckbeard load <value>)'))
+      : ('Target load: ' + (wm.load || 'per-workspace (.neckbeard.json)') + ' · All-Workspaces 100%');
 
     var vIns = (vData && vData.linesAdded) || wsStats.ins;
     var vDel = (vData && vData.linesRemoved) || wsStats.del;

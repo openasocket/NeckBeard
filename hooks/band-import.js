@@ -1334,7 +1334,39 @@ function formatSummary(cwd = process.cwd(), env = process.env) {
 
 if (require.main === module) {
   const args = process.argv.slice(2);
-  if (args.includes('--summary')) {
+  if (args.includes('--watch-heal')) {
+    const telemetryDir = bandDir(process.env);
+    const dashboardFile = path.join(telemetryDir, 'dashboard.html');
+    let cleanBuffer = null;
+    try {
+      const res = collectAndBuild();
+      cleanBuffer = fs.readFileSync(res.boardFile);
+    } catch {}
+    let healing = false;
+    try {
+      fs.watch(telemetryDir, (_evt, filename) => {
+        if (healing || (filename && filename !== 'dashboard.html')) return;
+        try {
+          const fd = fs.openSync(dashboardFile, 'r');
+          const buf = Buffer.alloc(24576);
+          const n = fs.readSync(fd, buf, 0, buf.length, 0);
+          fs.closeSync(fd);
+          const head = buf.toString('utf8', 0, n);
+          if (head.includes('Active Engineering Velocity') || head.includes('Target load: unset')) {
+            healing = true;
+            if (cleanBuffer) fs.writeFileSync(dashboardFile, cleanBuffer);
+            const rebuilt = collectAndBuild();
+            cleanBuffer = fs.readFileSync(rebuilt.boardFile);
+            healing = false;
+          } else {
+            cleanBuffer = fs.readFileSync(dashboardFile);
+          }
+        } catch {
+          healing = false;
+        }
+      });
+    } catch {}
+  } else if (args.includes('--summary')) {
     process.stdout.write(formatSummary() + '\n');
   } else {
     const res = collectAndBuild();

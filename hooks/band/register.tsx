@@ -304,10 +304,16 @@ async function persistTelemetryAndDashboard($: EngineInterface, state: Neckbeard
 async function launchDashboardInBrowser($: EngineInterface) {
   const dir = await resolveTelemetryDir($)
   const htmlFile = `${dir}/dashboard.html`
+  const homeDir = await resolveHomeDir($)
   try {
+    const claudeDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${homeDir}/.claude`
+    const importScript = `${claudeDir}/plugins/marketplaces/neckbeard/hooks/band-import.js`
+    if (await $.fs.exists(importScript).catch(() => false)) {
+      await $.process.run(['node', importScript]).catch(() => {})
+    }
     const hasExistingHtml = await $.fs.exists(htmlFile).catch(() => false)
-    const state = await readHud($)
-    if (!hasExistingHtml || state.turnCount > 0) {
+    if (!hasExistingHtml) {
+      const state = await readHud($)
       const jsonlFile = `${dir}/sessions.jsonl`
       const existing = await $.fs.read(jsonlFile).catch(() => '')
       const wsMeta = await buildCurrentWorkspaceMeta($, state)
@@ -316,7 +322,6 @@ async function launchDashboardInBrowser($: EngineInterface) {
   } catch {
     // Even if rebuilding fails or times out on a large ledger, still open the existing dashboard.html
   }
-  const homeDir = await resolveHomeDir($)
   const isWin = (await $.env.get('OS')) === 'Windows_NT'
   if (isWin) {
     await $.process.run(['cmd', '/c', 'start', '', htmlFile])

@@ -1,5 +1,7 @@
 # Install
 
+[![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)
+
 Pick your agent below. Not listed? Most agents read [`AGENTS.md`](AGENTS.md): copy it into your project root, or point your agent at [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). For the full host-to-manifest matrix, see [Agent Portability](docs/agent-portability.md).
 
 The Claude Code and Codex plugins run lightweight Node.js lifecycle hooks (`node >= 18`, zero dependencies), so `node` should be on your non-interactive shell `PATH`.

@@ -1,0 +1,48 @@
+{
+  "shared": true,
+  "load": "5000 local sessions, 60 workspaces, p95 hook < 50ms",
+  "boundaries": {
+    "external": {
+      "ingress": [
+        "hooks/band-import.js->cli-in",
+        "hooks/band/analyzer.ts->webhook-in",
+        "hooks/surface.js->cli-in",
+        "scripts/install-all.js->cli-in"
+      ],
+      "egress": [],
+      "supply": [
+        ".github/workflows/test.yml->ci"
+      ]
+    },
+    "internal": {
+      "auth": [
+        ".opencode/plugins/neckbeard.mjs->auth",
+        "hooks/band-import.js->auth",
+        "hooks/band/analyzer.ts->auth",
+        "hooks/band/dashboard.ts->auth",
+        "hooks/band/register.tsx->auth",
+        "hooks/lib.js->auth"
+      ],
+      "data": [
+        ".opencode/plugins/neckbeard.mjs->fs",
+        "hooks/band-import.js->fs",
+        "hooks/lib.js->fs",
+        "hooks/prompt.js->fs",
+        "hooks/surface.js->fs",
+        "hooks/vibes.js->fs"
+      ],
+      "exec": [
+        "hooks/band-import.js->proc",
+        "hooks/prompt.js->proc",
+        "hooks/session-start.js->proc",
+        "hooks/surface.js->proc",
+        "scripts/install-all.js->proc"
+      ],
+      "ai": [
+        "hooks/guard.js->ai",
+        "hooks/lib.js->ai",
+        "scripts/install-all.js->ai"
+      ]
+    }
+  }
+}

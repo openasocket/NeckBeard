@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://neckbeard.tech"><img src="assets/badge.svg" height="24" alt="NeckBeard: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
+  <a href="https://neckbeard.tech"><img src="https://neckbeard.tech/assets/badge.svg" width="456" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
 </p>
 
 <p align="center">
@@ -294,6 +294,12 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 [![Built & Audited with NeckBeard — Principal-Engineer Verified](https://neckbeard.tech/assets/seal.svg)](https://neckbeard.tech)
 ```
 
+**One-Click AI Agent Prompt (Audit, Fix & Add the Badge):**
+
+```text
+Run /neckbeard-audit on this repository, refactor or rewrite every confirmed Must-fix and Should-fix finding, verify all tests pass, and then add the NeckBeard Audited badge ([![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)) to README.md.
+```
+
 ---
 
 ## FAQ
@@ -320,3 +326,9 @@ No dependencies. Node 18 or later.
 ## License
 
 [MIT](LICENSE).
+
+---
+
+<p align="center">
+  <a href="https://neckbeard.tech"><img src="https://neckbeard.tech/assets/seal.svg" width="380" alt="Built & Audited with NeckBeard — Principal-Engineer Verified"></a>
+</p>

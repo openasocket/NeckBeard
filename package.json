@@ -1,6 +1,6 @@
 {
   "name": "neckbeard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.",
   "license": "MIT",

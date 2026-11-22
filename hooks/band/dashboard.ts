@@ -483,7 +483,7 @@ export function renderDashboardHtml(
     <div class="rail-heading">Workspaces (<span id="ws-total-cnt">0</span>)</div>
     <div id="ws-list" style="overflow-y:auto;max-height:70vh"></div>
     <div class="rail-footer">
-      NeckBeard Command Center v0.2<br>
+      NeckBeard Command Center v0.3<br>
       3-Gate Engine + VIBES Hub<br>
       100% Local · Zero Network Calls
     </div>

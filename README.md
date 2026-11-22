@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/scale-Targeted%20Scalability%20(Fast%20at%20Your%20Load%2C%20Not%20100x)-111714?style=flat-square&labelColor=0b0e0c&color=f59e0b" alt="Targeted Scalability">
   <img src="https://img.shields.io/badge/UX-Complexity%20Hidden%20Inside%20(0%20Knobs)-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="Complexity Hidden Inside">
   <a href="https://www.itsavibe.ai"><img src="https://img.shields.io/badge/provenance-VIBES%20Audit%20%26%20Local%20Telemetry-111714?style=flat-square&labelColor=0b0e0c&color=38bdf8" alt="VIBES Audit & Local Telemetry"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/version-v0.2.0%20%C2%B7%20MIT-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.2.0 MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/version-v0.3.0%20%C2%B7%20MIT-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.3.0 MIT"></a>
 </p>
 
 <p align="center">
@@ -68,7 +68,10 @@ Then it enforces the three gates from line one:
   <img src="assets/review.png" width="880" alt="/neckbeard-review and /neckbeard-audit: every finding has a concrete exploit or bottleneck at the named load, variant search across the repo, and a root fix.">
 </p>
 
-`/neckbeard-review` and `/neckbeard-audit` never play CWE bingo or offer vague *"consider refactoring"* advice. Every finding requires a concrete case (*who sends what and what they get*, *which input breaks what user flow*, or *what concurrency at the named load triggers what bottleneck or race*), automatically searches the repo for variants of every **Must fix** flaw, and proposes the smallest root fix that deletes code.
+`/neckbeard-review` and `/neckbeard-audit` never play CWE bingo or offer vague *"consider refactoring"* advice. Every finding requires a concrete case (*who sends what and what they get*, *which input breaks what user flow*, or *what concurrency at the named load triggers what bottleneck or race*), automatically searches the repo for all variants of every **Must fix** and **Should fix** flaw, and proposes the smallest root fix that deletes code.
+
+- **No Artificial Finding Cap:** `/neckbeard-audit` (`lite` and `complete`) never caps or hides findings at an arbitrary limit. Every confirmed **Must fix** and **Should fix** issue is reported in full; if a repository has a very large volume of findings (`> 25`), NeckBeard states the exact total found and explicitly alerts/prompts you to expand every remaining item in line-by-line detail or export them into a remediation `SPEC.md` / `.maestro/playbooks/` checklist.
+- **Math-Backed Refactor vs. Rewrite-from-Scratch Assessment:** Before ever recommending a rewrite, `/neckbeard-audit` computes and shows the explicit engineering effort/time math comparing **`E_patch`** (`root fixes × affected LOC/callers + hostile-input verification tests`) against **`E_rewrite`** (`clean minimal LOC to pass all 3 gates + caller migration + full test parity × regression risk`). Recommending a full rewrite from scratch is exceedingly rare and only happens when the math proves `E_patch > E_rewrite`.
 
 ---
 
@@ -78,9 +81,9 @@ Then it enforces the three gates from line one:
 |---|---|
 | `neckbeard` | Applies the question ladder and the three gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md) on coding tasks across `lite`, `full`, `paranoid`, and `off` levels. |
 | `neckbeard-review` | Reviews a change against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md) with concrete failure cases, variant search, and `--ci` gate mode. |
-| `neckbeard-audit` | Audits a repo or folder (`lite` default: targeted execution flows and major internal/external data & trust boundaries; `complete`: every single code, config, and doc file in the repo, with an upfront time/token/tool-call warning) against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). |
+| `neckbeard-audit` | Audits a repo or folder (`lite` default: targeted execution flows and major internal/external data & trust boundaries; `complete`: every single code, config, and doc file in the repo, with an upfront time/token/tool-call warning) with zero artificial finding cap, full variant search, and explicit `E_patch` vs. `E_rewrite` effort/time math. |
 | `neckbeard-debt` | Scans tracked and untracked files for `risk:`, `shortcut:`, and `ponytail:` markers and enforces the accepted-risk boundary from [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). |
-| `neckbeard-gain` | Local telemetry report and Security & Engineering Command Center (`~/.config/neckbeard/telemetry/dashboard.html`): tokens, cost, turn time, definition reuse %, refactor line delta, `PreToolUse` guard blocks, and security issues identified/resolved (defaulting to `.ai-audit/` VIBES data when present). |
+| `neckbeard-gain` | Local telemetry report and 5-tab Security & Engineering Command Center (`~/.config/neckbeard/telemetry/dashboard.html`): 14-day API cost & prompt-cache velocity chart, clickable per-repository scorecard, per-model cache economics, External→Internal Trust-Boundary Graph, searchable session forensics, and front-and-center 5-pillar `.ai-audit/` VIBES provenance & PRISM risk intelligence. |
 
 ---
 
@@ -112,13 +115,16 @@ For **trust boundaries**, NeckBeard never asks you to do its threat modeling: it
 
 ## Claude Code Banner (`AbovePrompt` HUD) & Security Command Center
 
-In Claude Code (CLI and Desktop), NeckBeard loads [`hooks/claude-band.json`](hooks/claude-band.json) ([`hooks/band/register.tsx`](hooks/band/register.tsx)) to render an interactive HUD above the prompt input box and maintain a **100% local** JSONL telemetry store (`~/.config/neckbeard/telemetry/sessions.jsonl`) and self-contained **NeckBeard Security & Engineering Command Center** (`~/.config/neckbeard/telemetry/dashboard.html`):
+In Claude Code (CLI and Desktop), NeckBeard loads [`hooks/claude-band.json`](hooks/claude-band.json) ([`hooks/band/register.tsx`](hooks/band/register.tsx)) to render an interactive HUD above the prompt input box and maintain a **100% local** JSONL telemetry store (`~/.config/neckbeard/telemetry/sessions.jsonl`) and self-contained 5-tab **NeckBeard Security & Engineering Command Center** (`~/.config/neckbeard/telemetry/dashboard.html`):
 
-- **Tokens, Cost & Turn Performance:** Session and per-turn API cost (`$`), input/output/cache tokens, and active agent work time.
-- **Refactor & Code Reuse Optimizations:** Definition reuse percentage (`reused` vs. `new` functions/classes), net refactor line delta (`+added / -removed` LOC), open callers warning (`⚠ N callers open`), and live test status (`✓ N tests`, `✗ N failed`, `stale`).
-- **Security Issues Identified & Resolved:** Live count of `PreToolUse` guard blocks (`🛡️ N blocked`), security/TRACE issues identified vs. resolved (`🔒 fixed/found`), active project load target, and live **VIBES PRISM** risk score.
-- **VIBES-First Instrumentation:** When `.ai-audit/` ([VIBES Protocol](https://www.itsavibe.ai)) is present, the band, importer ([`hooks/band-import.js`](hooks/band-import.js)), and `/neckbeard-gain` default to reading `.ai-audit/manifest.json` and `.ai-audit/annotations.jsonl` for line-range deltas, PRISM `risk_score`, EVOLVE `decision` counts, and TRACE incident resolution.
-- **Band commands:** `/neckbeard band [on|off|import|board]` or `/neckbeard-gain`.
+- **High-Value Baseline Engineering Intelligence (Even Without VIBES):**
+  - **4-Card 3-Gate & Economics Scoreboard:** Code Minimalism & Reuse (`+inserted / -deleted LOC`, symbol reuse %), `PreToolUse` Shield & Safety (`N blocked`), Token Cache & Cost Efficiency (`$` spend, total tokens, `% prompt cache hit rate`), and Active Engineering Velocity (`hours/minutes`, `.neckbeard.json` target load).
+  - **14-Day Cost, Session & Cache Velocity SVG Chart + Repo & Model Economics Tables:** Visualizes daily API spend and prompt-cache efficiency, ranks every local repository in a clickable scorecard, and breaks down token/cache/cost efficiency per model (`Opus`, `Sonnet`, `Haiku`).
+  - **Interactive External `[ext]` → Internal `[int]` Trust-Boundary Graph & Searchable Session Forensics:** Maps saved `.neckbeard.json` boundaries and highlights unreviewed boundary-expansion drift (`⚠ +N boundary`).
+- **Exponential 5-Pillar Deep Forensics When VIBES (`.ai-audit/`) Is Enabled:**
+  - When `.ai-audit/` ([VIBES Protocol](https://www.itsavibe.ai)) is present in a workspace, [`hooks/vibes.js`](hooks/vibes.js) and [`hooks/band-import.js`](hooks/band-import.js) unlock the **5-Pillar VIBES Hub** (`VIBES v1.1` content-addressed `manifest.entries` hash resolution & `line_start`/`line_end` file attribution, `VERIFY v1.0` DSSE & high-assurance attestation coverage, `PRISM v1.0` 3-panel SVG risk histogram + turn-by-turn risk trajectory sparkline + file hotspots, `EVOLVE v1.0` architectural decisions & reasoning chains, `TRACE v1.0` incident/IoC forensics, and a turn-level `.ai-audit/annotations.jsonl` provenance inspector).
+  - When `.ai-audit/` is not yet initialized in a selected workspace, the Command Center provides a one-click **"Preview Full VIBES (.ai-audit/) Forensics"** interactive demo and quickstart onboarding (`npx vibecheck init && vibecheck validate`).
+- **HUD commands:** `/neckbeard band [on|off|import|board]` or `/neckbeard-gain`.
 
 ---
 

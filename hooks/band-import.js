@@ -194,39 +194,54 @@ function generateCommandCenterHtml(records, workspacesMeta = {}, generatedAtMs =
 <style>
 :root{color-scheme:dark;--bg:#060908;--surface:#0b110e;--card:#101814;--border:#1d2b23;--emerald:#10b981;--cyan:#06b6d4;--amber:#f59e0b;--red:#ef4444;--text:#ecf3ef;--muted:#8b9d92;--dim:#55665c;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-.shell{display:grid;grid-template-columns:276px minmax(0,1fr);min-height:100vh}
+a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
+.shell{display:grid;grid-template-columns:280px minmax(0,1fr);min-height:100vh}
 .rail{background:var(--surface);border-right:1px solid var(--border);padding:22px 16px;display:flex;flex-direction:column;gap:6px}
 .crest{display:flex;align-items:center;gap:12px;padding:4px 8px 18px;border-bottom:1px solid var(--border);margin-bottom:10px}
 .tp{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 10px var(--red)}
 .crest-title{font:800 16px/1.1 var(--mono);color:var(--text);display:flex;align-items:center;gap:7px}
 .crest-sub{font:600 10.5px var(--mono);color:var(--emerald);margin-top:4px;letter-spacing:.05em}
 .rail-lbl{font:700 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 10px 4px}
-.ws-btn{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid transparent;background:transparent;color:var(--muted);font:500 13px var(--sans);padding:9px 12px;border-radius:10px;cursor:pointer;text-align:left}
+.ws-btn{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid transparent;background:transparent;color:var(--muted);font:500 13px var(--sans);padding:9px 12px;border-radius:10px;cursor:pointer;text-align:left;gap:6px}
 .ws-btn:hover,.ws-btn.active{background:var(--card);color:var(--text);border-color:var(--border)}
+.ws-badges{display:inline-flex;align-items:center;gap:5px}
+.ws-vtag{font:700 9.5px var(--mono);color:var(--cyan);background:rgba(6,182,212,.14);border:1px solid rgba(6,182,212,.35);padding:1px 6px;border-radius:99px}
 .ws-cnt{font:600 11.5px var(--mono);color:var(--emerald);background:rgba(16,185,129,.12);padding:2px 7px;border-radius:99px}
 .rail-foot{margin-top:auto;padding:14px 10px 4px;border-top:1px solid var(--border);font:500 11.5px/1.6 var(--mono);color:var(--dim)}
-.stage{padding:28px 36px 64px;max-width:1440px;width:100%}
+.stage{padding:28px 36px 64px;max-width:1460px;width:100%}
 .topbar{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid var(--border)}
 .topbar h1{margin:0;font:800 24px/1.15 var(--mono);letter-spacing:-.02em}
 .topbar p{margin:5px 0 0;color:var(--muted);font:400 13px var(--mono)}
-.views{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:4px;gap:4px}
-.v-btn{border:0;background:transparent;color:var(--muted);font:600 12.5px var(--mono);padding:8px 14px;border-radius:8px;cursor:pointer}
+.views{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:4px;gap:4px;flex-wrap:wrap}
+.v-btn{border:0;background:transparent;color:var(--muted);font:600 12px var(--mono);padding:8px 13px;border-radius:8px;cursor:pointer}
 .v-btn.active{background:var(--card);color:var(--emerald);box-shadow:inset 0 0 0 1px rgba(16,185,129,.35)}
 .kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:22px}
+.vpillars{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:14px}
+.pbox{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px}
+.pk{font:700 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--cyan)}
+.pv{font:800 21px/1.2 var(--mono);margin-top:6px;color:var(--text)}
+.ps{font:400 11px var(--mono);color:var(--muted);margin-top:4px}
 .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px}
 .m-tag{font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
 .m-val{font:800 28px/1.15 var(--mono);margin-top:8px;color:var(--text)}
 .m-sub{font:400 12px var(--mono);color:var(--dim);margin-top:6px}
 .card-sec{margin-top:20px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px}
+.card-sec.vibes-hi{border-color:rgba(6,182,212,.45);background:linear-gradient(180deg,rgba(6,182,212,.05) 0%,var(--card) 100%)}
 .sec-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-.sec-head h2{margin:0;font:700 16px var(--mono)}
+.sec-head h2{margin:0;font:700 16px var(--mono);display:flex;align-items:center;gap:10px}
+.split2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.adopt-bar{margin-top:14px;background:rgba(6,182,212,.07);border:1px dashed rgba(6,182,212,.45);border-radius:12px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.adopt-cmd{font:500 12px var(--mono);background:#060908;border:1px solid var(--border);padding:8px 12px;border-radius:8px;color:var(--emerald)}
+.act-btn{border:1px solid rgba(6,182,212,.45);background:rgba(6,182,212,.14);color:var(--cyan);font:600 12px var(--mono);padding:7px 13px;border-radius:8px;cursor:pointer}
+.act-btn:hover{background:rgba(6,182,212,.25)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font:600 11.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:10px 12px;border-bottom:1px solid var(--border)}
 td{padding:12px;border-bottom:1px solid var(--border);font-family:var(--mono)}
 td.tcol{font-family:var(--sans);font-weight:500}
 .chip{display:inline-block;padding:3px 9px;border-radius:99px;font:600 11px var(--mono);background:rgba(16,185,129,.14);color:var(--emerald)}
+.chip.cyan{background:rgba(6,182,212,.16);color:var(--cyan)}
 .chip.warn{background:rgba(245,158,11,.16);color:var(--amber)}
-@media(max-width:1024px){.shell{grid-template-columns:1fr}.rail{border-right:0;border-bottom:1px solid var(--border)}.kpis{grid-template-columns:1fr}}
+@media(max-width:1120px){.shell{grid-template-columns:1fr}.rail{border-right:0;border-bottom:1px solid var(--border)}.kpis,.vpillars,.split2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -241,22 +256,70 @@ td.tcol{font-family:var(--sans);font-weight:500}
     </div>
     <div class="rail-lbl">Workspaces</div>
     <div id="ws-list"></div>
-    <div class="rail-foot">NeckBeard Command Center v0.2<br>100% Local JSONL Store<br>Zero Network Telemetry</div>
+    <div class="rail-foot">NeckBeard Command Center v0.2<br>VIBES (.ai-audit/) Native Hub<br>100% Local · Zero Network Calls</div>
   </aside>
   <main class="stage">
     <header class="topbar">
       <div><h1 id="st-title">All Workspaces</h1><p id="st-subtitle"></p></div>
       <div class="views" role="tablist">
         <button type="button" class="v-btn active" data-view="overview">1. Command Overview</button>
-        <button type="button" class="v-btn" data-view="topology">2. Trust-Boundary Graph</button>
-        <button type="button" class="v-btn" data-view="forensics">3. Session Forensics</button>
+        <button type="button" class="v-btn" data-view="vibes">2. VIBES (.ai-audit) Hub</button>
+        <button type="button" class="v-btn" data-view="topology">3. Trust-Boundary Graph</button>
+        <button type="button" class="v-btn" data-view="forensics">4. Session Forensics</button>
       </div>
     </header>
     <div class="kpis">
       <div class="panel"><div class="m-tag"><span>Code Minimalism &amp; Reuse</span><span style="color:var(--emerald)">LADDER</span></div><div class="m-val" id="m-loc">+0 / -0 LOC</div><div class="m-sub" id="m-reuse">Symbol reuse ratio across edits</div></div>
-      <div class="panel"><div class="m-tag"><span>Security &amp; PreToolUse Shield</span><span style="color:var(--cyan)">SAFE GATE</span></div><div class="m-val" id="m-sec">0 blocked</div><div class="m-sub" id="m-vibes">VIBES PRISM &amp; TRACE status</div></div>
+      <div class="panel"><div class="m-tag"><span>Security &amp; VIBES Provenance</span><span style="color:var(--cyan)">SAFE GATE</span></div><div class="m-val" id="m-sec">0 blocked</div><div class="m-sub" id="m-vibes">VIBES PRISM &amp; TRACE status</div></div>
       <div class="panel"><div class="m-tag"><span>Targeted Scalability &amp; Cost</span><span style="color:var(--amber)">FAST GATE</span></div><div class="m-val" id="m-cost">$0.00</div><div class="m-sub" id="m-load">Load target from .neckbeard.json</div></div>
     </div>
+
+    <!-- FRONT-AND-CENTER VIBES PROTOCOL (.ai-audit/) DATA VISUALIZATION & ADOPTION HUB -->
+    <section class="card-sec vibes-hi" id="pane-vibes">
+      <div class="sec-head">
+        <h2>
+          <span>VIBES Protocol (.ai-audit/) Provenance &amp; PRISM Risk Intelligence</span>
+          <a href="https://www.itsavibe.ai" target="_blank" rel="noopener" class="chip cyan">itsavibe.ai ↗</a>
+        </h2>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span id="vibes-status-chip" class="chip">Checking .ai-audit/...</span>
+          <button type="button" id="vibes-demo-btn" class="act-btn">Preview Reference VIBES Telemetry</button>
+        </div>
+      </div>
+      <p style="margin:0 0 12px;color:var(--muted);font-size:13px">
+        NeckBeard is the <strong>preventive engineering layer</strong> (3 Gates + <code>PreToolUse</code> Guard); the open <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES Protocol</a></strong> (<code>VIBES v1.1</code> · <code>VERIFY v1.0</code> · <code>PRISM v1.0</code> · <code>EVOLVE v1.0</code> · <code>TRACE v1.0</code>) is the <strong>evidentiary provenance &amp; risk layer</strong> stored in <code>.ai-audit/</code>.
+      </p>
+      <div class="vpillars">
+        <div class="pbox"><div class="pk">1. VIBES v1.1 Provenance</div><div class="pv" id="vp-prov">0 annotations</div><div class="ps" id="vp-prov-sub">0 blobs · 0 files attributed</div></div>
+        <div class="pbox"><div class="pk">2. VERIFY v1.0 DSSE</div><div class="pv" id="vp-verify">0% verified</div><div class="ps" id="vp-verify-sub">0 Ed25519 DSSE envelopes</div></div>
+        <div class="pbox"><div class="pk">3. PRISM v1.0 Risk</div><div class="pv" id="vp-prism">0.00 max</div><div class="ps" id="vp-prism-sub">0 High/Critical (&gt;= 0.60)</div></div>
+        <div class="pbox"><div class="pk">4. EVOLVE v1.0 Decisions</div><div class="pv" id="vp-evolve">0 decisions</div><div class="ps" id="vp-evolve-sub">Linked to /neckbeard-debt</div></div>
+        <div class="pbox"><div class="pk">5. TRACE v1.0 Forensics</div><div class="pv" id="vp-trace">0 / 0 fixed</div><div class="ps" id="vp-trace-sub">IoC rules &amp; incident response</div></div>
+      </div>
+      <div style="margin-top:16px;background:#080d0b;border:1px solid var(--border);border-radius:12px;padding:14px">
+        <svg id="vibes-svg" viewBox="0 0 960 250" style="width:100%;height:auto;display:block"></svg>
+      </div>
+      <div class="split2">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px">
+          <div style="font:700 12px var(--mono);color:var(--emerald);margin-bottom:8px">EVOLVE DECISION RECORDS &amp; PRETOOLUSE PROVENANCE SHIELD</div>
+          <div id="vibes-decisions-list" style="font:400 12px/1.6 var(--mono);color:var(--muted)"></div>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px">
+          <div style="font:700 12px var(--mono);color:var(--amber);margin-bottom:8px">TRACE INCIDENTS &amp; HIGH-RISK PRISM ANNOTATIONS (&gt;= 0.60)</div>
+          <div id="vibes-incidents-list" style="font:400 12px/1.6 var(--mono);color:var(--muted)"></div>
+        </div>
+      </div>
+      <div class="adopt-bar">
+        <div style="max-width:680px">
+          <div style="font:700 13px var(--mono);color:var(--cyan)">🚀 Bring Cryptographic AI Provenance (.ai-audit/) to Your Repositories</div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:4px">
+            When <code>.ai-audit/</code> is initialized in a project, NeckBeard’s <code>hooks/guard.js</code> automatically protects immutable SHA-256 blobs &amp; DSSE attestations from agent tampering, while <code>/neckbeard-review</code>, <code>/neckbeard-audit</code>, and <code>/neckbeard-debt</code> ingest PRISM risk scores and EVOLVE decisions automatically.
+          </div>
+        </div>
+        <div class="adopt-cmd">npx vibecheck init &amp;&amp; vibecheck validate</div>
+      </div>
+    </section>
+
     <section class="card-sec" id="pane-overview">
       <div class="sec-head"><h2>External → Internal Trust-Boundary Graph</h2><span id="ov-drift" class="chip">✓ Baseline Verified</span></div>
       <svg id="boundary-svg" viewBox="0 0 960 360" style="width:100%;height:auto;display:block"></svg>
@@ -271,10 +334,95 @@ td.tcol{font-family:var(--sans);font-weight:500}
 <script>
 (function(){
   var payload=JSON.parse(document.getElementById('nb-telemetry-payload').textContent);
-  var records=payload.records||[],meta=payload.workspacesMeta||{},activeWorkspace='',activeView='overview';
+  var records=payload.records||[],meta=payload.workspacesMeta||{},activeWorkspace='',activeView='overview',demoVibesMode=false;
+  var SAMPLE_VIBES={
+    present:true,isDemo:true,annotationsCount:48,verifiedCount:46,blobsCount:94,attestationsCount:46,iocRulesCount:12,hasAuditDb:true,
+    maxPrismRisk:0.78,highRiskCount:4,traceIncidents:2,traceResolved:2,decisions:5,linesAdded:312,linesRemoved:840,filesTouchedCount:14,
+    prismBuckets:{low:31,moderate:13,high:3,critical:1},
+    fileHotspots:[
+      {file:'src/routes/webhooks.js',annotations:9,linesAdded:42,linesRemoved:188,maxRisk:0.78,verified:true},
+      {file:'src/auth/session.js',annotations:7,linesAdded:28,linesRemoved:94,maxRisk:0.68,verified:true},
+      {file:'src/db/invoices.js',annotations:8,linesAdded:35,linesRemoved:210,maxRisk:0.54,verified:true},
+      {file:'hooks/guard.js',annotations:6,linesAdded:64,linesRemoved:30,maxRisk:0.41,verified:true},
+      {file:'src/lib/archive.js',annotations:5,linesAdded:19,linesRemoved:82,maxRisk:0.24,verified:true}
+    ],
+    decisionRecords:[
+      {id:'DEC-01',title:'Enforce server-side org_id object auth at SQL query layer',status:'verified',timestamp:'2026-11-21'},
+      {id:'DEC-02',title:'Cap batch webhook payload at 64KB and 500 items for 250 rps target',status:'verified',timestamp:'2026-11-21'},
+      {id:'DEC-03',title:'Defer Redis rate-limit cache until load crosses 1,000 rps (risk: linked)',status:'accepted',timestamp:'2026-11-21'}
+    ],
+    incidentRecords:[
+      {id:'INC-01',iocId:'TRACE-SECRET-AWS',severity:'critical',status:'resolved',summary:'Blocked hardcoded AWS key attempt via NeckBeard PreToolUse guard',timestamp:'2026-11-21'},
+      {id:'INC-02',iocId:'PRISM-HIGH-0.78',severity:'high',status:'resolved',summary:'Webhook HMAC signature verification hardened & DSSE attested',timestamp:'2026-11-21'}
+    ]
+  };
   function el(i){return document.getElementById(i)}
   function fmtTok(n){return n<1000?String(Math.round(n)):n<1e6?+(n/1e3).toFixed(1)+'k':+(n/1e6).toFixed(1)+'M'}
   function fmtDur(ms){var m=Math.round((ms||0)/60000);return m<60?m+'m':Math.floor(m/60)+'h '+(m%60)+'m'}
+  function resolveVibes(wsKey){
+    if(demoVibesMode)return SAMPLE_VIBES;
+    if(wsKey&&meta[wsKey]&&meta[wsKey].vibes&&meta[wsKey].vibes.present)return meta[wsKey].vibes;
+    var ks=Object.keys(meta);
+    for(var i=0;i<ks.length;i++){var v=meta[ks[i]]&&meta[ks[i]].vibes;if(v&&v.present)return v}
+    return null;
+  }
+  function renderVibes(wsKey){
+    var v=resolveVibes(wsKey),chip=el('vibes-status-chip'),dbtn=el('vibes-demo-btn');
+    if(v&&v.present){
+      chip.className=v.isDemo?'chip warn':'chip cyan';
+      chip.textContent=v.isDemo?'★ Interactive Reference VIBES (.ai-audit/) Preview Active':'● VIBES (.ai-audit/) Active · PreToolUse Immutability Shield Armed';
+      dbtn.textContent=v.isDemo?'Exit Reference Preview':'Toggle Reference Preview';
+    }else{
+      chip.className='chip warn';
+      chip.textContent='○ .ai-audit/ Not Detected in Workspace · Click Preview or Initialize VIBES';
+      dbtn.textContent='Preview Reference VIBES Telemetry';
+    }
+    var av=v||{annotationsCount:0,verifiedCount:0,blobsCount:0,attestationsCount:0,iocRulesCount:0,maxPrismRisk:0,highRiskCount:0,traceIncidents:0,traceResolved:0,decisions:0,filesTouchedCount:0,prismBuckets:{low:0,moderate:0,high:0,critical:0},fileHotspots:[],decisionRecords:[],incidentRecords:[]};
+    var ac=av.annotationsCount||0,vp=ac>0?Math.round(((av.verifiedCount||0)/ac)*100):0;
+    el('vp-prov').textContent=ac+' annotations';
+    el('vp-prov-sub').textContent=(av.blobsCount||0)+' SHA-256 blobs · '+(av.filesTouchedCount||0)+' files';
+    el('vp-verify').textContent=vp+'% verified';
+    el('vp-verify-sub').textContent=(av.attestationsCount||0)+' DSSE attestations · Guard locked';
+    el('vp-prism').textContent=Number(av.maxPrismRisk||0).toFixed(2)+' max risk';
+    el('vp-prism-sub').textContent=(av.highRiskCount||0)+' High/Critical (>= 0.60)';
+    el('vp-evolve').textContent=(av.decisions||0)+' decisions';
+    el('vp-evolve-sub').textContent='Cross-checked by /neckbeard-debt';
+    el('vp-trace').textContent=(av.traceResolved||0)+' / '+(av.traceIncidents||0)+' fixed';
+    el('vp-trace-sub').textContent=(av.iocRulesCount||0)+' custom IoC rules in iocs.d/';
+    var vbox=el('vibes-svg');
+    if(vbox){
+      vbox.textContent='';var NS='http://www.w3.org/2000/svg';
+      function node(t,a,p,txt){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,a[k]);if(txt!=null)n.textContent=txt;if(p)p.appendChild(n);return n}
+      node('text',{x:20,y:24,fill:'#06b6d4','font-size':12.5,'font-weight':700,'font-family':'monospace'},vbox,'PRISM v1.0 RISK SCORE DISTRIBUTION (.ai-audit/annotations.jsonl)');
+      var pb=av.prismBuckets||{},bks=[['Low (< 0.30)',pb.low||0,'#10b981'],['Moderate (0.30–0.59)',pb.moderate||0,'#06b6d4'],['High (0.60–0.79) [Review Gate]',pb.high||0,'#f59e0b'],['Critical (>= 0.80) [Must Fix]',pb.critical||0,'#ef4444']];
+      var mb=Math.max(1,pb.low||0,pb.moderate||0,pb.high||0,pb.critical||0);
+      bks.forEach(function(b,idx){
+        var y=48+idx*46;
+        node('text',{x:20,y:y+14,fill:'#ecf3ef','font-size':11,'font-family':'monospace'},vbox,b[0]);
+        node('rect',{x:235,y:y,width:170,height:20,rx:5,fill:'#101814',stroke:'#1d2b23'},vbox);
+        var w=Math.max(4,Math.round((b[1]/mb)*170));
+        if(b[1]>0)node('rect',{x:235,y:y,width:w,height:20,rx:5,fill:b[2]},vbox);
+        node('text',{x:415,y:y+14,fill:b[2],'font-size':11.5,'font-weight':700,'font-family':'monospace'},vbox,String(b[1]));
+      });
+      node('line',{x1:465,y1:14,x2:465,y2:235,stroke:'#1d2b23','stroke-dasharray':'4,4'},vbox);
+      node('text',{x:490,y:24,fill:'#10b981','font-size':12.5,'font-weight':700,'font-family':'monospace'},vbox,'TOP ATTRIBUTED FILES & PRISM RISK HOTSPOTS');
+      var hs=(av.fileHotspots&&av.fileHotspots.length)?av.fileHotspots.slice(0,5):[{file:'(No .ai-audit/ in workspace — click Preview above)',annotations:0,linesAdded:0,linesRemoved:0,maxRisk:0,verified:false}];
+      hs.forEach(function(h,idx){
+        var y=46+idx*38,rc=h.maxRisk>=0.8?'#ef4444':h.maxRisk>=0.6?'#f59e0b':h.maxRisk>=0.3?'#06b6d4':'#10b981';
+        node('text',{x:490,y:y+14,fill:'#ecf3ef','font-size':11,'font-family':'monospace'},vbox,(h.verified?'✓ ':'○ ')+h.file.slice(0,32));
+        node('rect',{x:730,y:y+2,width:110,height:14,rx:4,fill:'#101814',stroke:'#1d2b23'},vbox);
+        var rw=Math.max(3,Math.round(Math.min(1,h.maxRisk||0)*110));
+        if(h.maxRisk>0)node('rect',{x:730,y:y+2,width:rw,height:14,rx:4,fill:rc},vbox);
+        node('text',{x:850,y:y+13,fill:rc,'font-size':10.5,'font-weight':700,'font-family':'monospace'},vbox,'R:'+Number(h.maxRisk||0).toFixed(2)+' (+'+h.linesAdded+'/-'+h.linesRemoved+')');
+      });
+    }
+    var dl=el('vibes-decisions-list');dl.textContent='';
+    var ds=(av.decisionRecords&&av.decisionRecords.length)?av.decisionRecords:[{id:'GUARD',title:'Immutable .ai-audit/{manifest.json,annotations.jsonl,blobs/,attestations/} protected by hooks/guard.js',status:'armed'}];
+    ds.slice(0,5).forEach(function(d){var r=document.createElement('div');r.textContent='['+d.id+'] '+d.title+' ('+d.status+')';dl.appendChild(r)});
+    var il=el('vibes-incidents-list');il.textContent='';
+    var is=(av.incidentRecords&&av.incidentRecords.length)?av.incidentRecords:[{iocId:'READY',status:'clean',summary:'0 unresolved TRACE incidents or unverified high-risk PRISM edits'}];
+    is.slice(0,5).forEach(function(inc){var r=document.createElement('div');r.textContent='['+inc.iocId+' · '+inc.status.toUpperCase()+'] '+inc.summary;il.appendChild(r)});
+  }
   function renderGraph(wsKey){
     var box=el('boundary-svg');if(!box)return;box.textContent='';
     var NS='http://www.w3.org/2000/svg';
@@ -307,6 +455,7 @@ td.tcol{font-family:var(--sans);font-weight:500}
     var key=activeWorkspace||Object.keys(meta)[0]||'',wm=meta[key]||{};
     el('st-title').textContent=activeWorkspace||'All Workspaces';
     el('st-subtitle').textContent=list.length+' recorded session(s) · Load envelope: '+(wm.load||'unset (/neckbeard load <params>)');
+    el('pane-vibes').style.display=(activeView==='overview'||activeView==='vibes')?'block':'none';
     el('pane-overview').style.display=(activeView==='overview'||activeView==='topology')?'block':'none';
     el('pane-forensics').style.display=(activeView==='overview'||activeView==='forensics')?'block':'none';
     var cost=0,tok=0,ins=0,del=0,blk=0,found=0,fixed=0,reused=0,created=0;
@@ -334,15 +483,22 @@ td.tcol{font-family:var(--sans);font-weight:500}
       });
       tbody.appendChild(tr);
     });
+    renderVibes(activeWorkspace);
     renderGraph(activeWorkspace);
   }
+  var dbtn=el('vibes-demo-btn');
+  if(dbtn){dbtn.onclick=function(){demoVibesMode=!demoVibesMode;render()}}
   var wsNav=el('ws-list');
   var names=Array.from(new Set(records.map(function(r){return r.projectName}).concat(Object.keys(meta)).filter(Boolean)));
   [['','All Workspaces',records.length]].concat(names.map(function(n){return[n,n,records.filter(function(r){return r.projectName===n}).length]})).forEach(function(it){
     var b=document.createElement('button');b.type='button';b.className='ws-btn'+(it[0]===activeWorkspace?' active':'');
     var s1=document.createElement('span');s1.textContent=it[1];
+    var rw=document.createElement('span');rw.className='ws-badges';
+    if(it[0]&&meta[it[0]]&&meta[it[0]].vibes&&meta[it[0]].vibes.present){
+      var vt=document.createElement('span');vt.className='ws-vtag';vt.textContent='VIBES';rw.appendChild(vt);
+    }
     var s2=document.createElement('span');s2.className='ws-cnt';s2.textContent=String(it[2]);
-    b.appendChild(s1);b.appendChild(s2);
+    rw.appendChild(s2);b.appendChild(s1);b.appendChild(rw);
     b.onclick=function(){activeWorkspace=it[0];document.querySelectorAll('.ws-btn').forEach(function(x){x.classList.toggle('active',x===b)});render()};
     wsNav.appendChild(b);
   });
@@ -366,6 +522,7 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
   let newRecordsCount = 0;
 
   const activeProject = path.basename(path.resolve(cwd)) || 'workspace';
+  const discoveredWorkspacePaths = new Map([[activeProject, path.resolve(cwd)]]);
 
   // 1. Primary source: VIBES (.ai-audit/) in the current workspace
   if (hasVibes(cwd)) {
@@ -433,6 +590,10 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
 
       scannedCount++;
       const projName = path.basename(parsed.workspaceCwd.replace(/[\\/]+$/, '')) || 'project';
+      if (!discoveredWorkspacePaths.has(projName) && fs.existsSync(parsed.workspaceCwd)) {
+        discoveredWorkspacePaths.set(projName, parsed.workspaceCwd);
+      }
+
       const recordId = `${sessionId.slice(0, 8)}-${parsed.startedAtMs}`;
       if (recordsById.has(recordId)) continue;
 
@@ -487,19 +648,25 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
   const allRecords = [...recordsById.values()];
   fs.writeFileSync(jsonlPath, allRecords.map((r) => JSON.stringify(r)).join('\n') + (allRecords.length ? '\n' : ''));
 
-  const cfg = readProjectConfig(cwd, env);
-  const drift = detectBoundaryDrift(cwd, env);
-  const vibes = readVibesTelemetry(cwd);
-  const workspacesMeta = {
-    [activeProject]: {
-      load: (cfg && cfg.load) || '',
-      boundaryLoad: (cfg && cfg.boundaryLoad) || {},
-      boundaries: (cfg && cfg.boundaries) || buildBoundaryMap(cwd),
-      driftAdded: (drift && drift.added) || [],
-      prismRisk: vibes ? vibes.maxPrismRisk : null,
-      vibesDecisions: vibes ? vibes.decisions : 0,
-    },
-  };
+  // Build workspace metadata (including rich VIBES 5-pillar telemetry) for active & discovered workspaces
+  const workspacesMeta = {};
+  for (const [projName, wsPath] of discoveredWorkspacePaths.entries()) {
+    const isCurrent = projName === activeProject;
+    const wsHasVibes = hasVibes(wsPath);
+    const wsCfg = readProjectConfig(wsPath, env);
+    if (!isCurrent && !wsHasVibes && !wsCfg) continue;
+    const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };
+    const wsVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;
+    workspacesMeta[projName] = {
+      load: (wsCfg && wsCfg.load) || '',
+      boundaryLoad: (wsCfg && wsCfg.boundaryLoad) || {},
+      boundaries: (wsCfg && wsCfg.boundaries) || (isCurrent ? buildBoundaryMap(wsPath) : { external: {}, internal: {} }),
+      driftAdded: (wsDrift && wsDrift.added) || [],
+      prismRisk: wsVibes ? wsVibes.maxPrismRisk : null,
+      vibesDecisions: wsVibes ? wsVibes.decisions : 0,
+      vibes: wsVibes,
+    };
+  }
 
   const html = generateCommandCenterHtml(allRecords, workspacesMeta, Date.now());
   const dashboardFile = path.join(telemetryDir, 'dashboard.html');

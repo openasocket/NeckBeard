@@ -289,9 +289,13 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
   assert.strictEqual(vibes.present, true);
   assert.strictEqual(vibes.maxPrismRisk, 0.72);
   assert.strictEqual(vibes.highRiskCount, 1);
+  assert.strictEqual(vibes.verifiedCount, 1);
+  assert.strictEqual(vibes.prismBuckets.high, 1);
   assert.strictEqual(vibes.traceIncidents, 1);
   assert.strictEqual(vibes.traceResolved, 1);
   assert.strictEqual(vibes.decisions, 2);
+  assert.strictEqual(vibes.decisionRecords.length, 2);
+  assert.strictEqual(vibes.incidentRecords.length, 1);
   assert.strictEqual(vibes.linesAdded, 18);
   assert.strictEqual(vibes.linesRemoved, 42);
   assert.match(formatVibesContext(dir), /PRISM max risk 0\.72/);
@@ -305,6 +309,9 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
   const boardHtml = fs.readFileSync(boardFile, 'utf8');
   assert.ok(boardHtml.includes('Trust-Boundary Graph'));
   assert.ok(boardHtml.includes('boundary-svg'));
+  assert.ok(boardHtml.includes('VIBES Protocol (.ai-audit/) Provenance'));
+  assert.ok(boardHtml.includes('vibes-svg'));
+  assert.ok(boardHtml.includes('itsavibe.ai'));
 });
 
 test('per-boundary load envelopes, boundary-expansion drift detection, and risk: load-trigger expiry', () => {

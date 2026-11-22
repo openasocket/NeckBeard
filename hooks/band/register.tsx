@@ -121,31 +121,116 @@ async function inspectVibesAnnotations($: EngineInterface, rootDir: string) {
     let resolved = 0
     let inserted = 0
     let deleted = 0
+    let annotationsCount = 0
+    let verifiedCount = 0
+    const prismBuckets = { low: 0, moderate: 0, high: 0, critical: 0 }
+    const fileMap = new Map<string, { file: string; annotations: number; linesAdded: number; linesRemoved: number; maxRisk: number; verified: boolean }>()
+
     for (const line of raw.split('\n')) {
       const t = line.trim()
       if (!t.startsWith('{')) continue
       try {
         const rec = JSON.parse(t) as Record<string, unknown>
+        annotationsCount++
+        const isVer = Boolean(rec.verified === true || rec.status === 'verified' || rec.attestation_id)
+        if (isVer) verifiedCount++
+        const add = typeof rec.lines_added === 'number' ? rec.lines_added : 0
+        const del = typeof rec.lines_removed === 'number' ? rec.lines_removed : 0
+        inserted += add
+        deleted += del
+
+        let riskVal = 0
         if (typeof rec.risk_score === 'number') {
+          riskVal = rec.risk_score
           maxRisk = maxRisk === null ? rec.risk_score : Math.max(maxRisk, rec.risk_score)
+          if (rec.risk_score >= 0.8) prismBuckets.critical++
+          else if (rec.risk_score >= 0.6) prismBuckets.high++
+          else if (rec.risk_score >= 0.3) prismBuckets.moderate++
+          else prismBuckets.low++
+
           if (rec.risk_score >= 0.6) {
             findings++
-            if (rec.verified === true || rec.resolved === true || rec.status === 'resolved') resolved++
+            if (isVer || rec.resolved === true || rec.status === 'resolved') resolved++
           }
         }
         if (rec.type === 'incident' || rec.record_type === 'incident') {
           findings++
           if (rec.resolved === true || rec.status === 'resolved' || rec.status === 'mitigated') resolved++
         }
-        if (typeof rec.lines_added === 'number') inserted += rec.lines_added
-        if (typeof rec.lines_removed === 'number') deleted += rec.lines_removed
+        const fpath = typeof rec.file_path === 'string' ? rec.file_path : typeof rec.file === 'string' ? rec.file : ''
+        if (fpath) {
+          const prev = fileMap.get(fpath) ?? { file: fpath, annotations: 0, linesAdded: 0, linesRemoved: 0, maxRisk: 0, verified: true }
+          prev.annotations++
+          prev.linesAdded += add
+          prev.linesRemoved += del
+          if (riskVal > prev.maxRisk) prev.maxRisk = +riskVal.toFixed(2)
+          prev.verified = prev.verified && isVer
+          fileMap.set(fpath, prev)
+        }
       } catch {
         continue
       }
     }
-    return { maxRisk, findings, resolved, inserted, deleted }
+    return {
+      present: annotationsCount > 0,
+      annotationsCount,
+      verifiedCount,
+      maxRisk,
+      findings,
+      resolved,
+      inserted,
+      deleted,
+      prismBuckets,
+      fileHotspots: [...fileMap.values()].sort((a, b) => b.maxRisk - a.maxRisk).slice(0, 6),
+    }
   } catch {
-    return { maxRisk: null, findings: 0, resolved: 0, inserted: 0, deleted: 0 }
+    return {
+      present: false,
+      annotationsCount: 0,
+      verifiedCount: 0,
+      maxRisk: null,
+      findings: 0,
+      resolved: 0,
+      inserted: 0,
+      deleted: 0,
+      prismBuckets: { low: 0, moderate: 0, high: 0, critical: 0 },
+      fileHotspots: [],
+    }
+  }
+}
+
+async function buildCurrentWorkspaceMeta($: EngineInterface, state: NeckbeardHudState) {
+  const repo = await $.session.repo().catch(() => null)
+  const rootDir = repo?.root ?? (await $.session.cwd())
+  const vibes = await inspectVibesAnnotations($, rootDir)
+  let parsedCfg: { load?: string; boundaryLoad?: Record<string, string>; boundaries?: Record<string, unknown> } = {}
+  try {
+    parsedCfg = JSON.parse(await $.fs.read(`${rootDir}/.neckbeard.json`))
+  } catch {}
+  return {
+    [state.projectName || basenameOf(rootDir)]: {
+      load: parsedCfg.load ?? state.loadEnvelope,
+      boundaryLoad: parsedCfg.boundaryLoad ?? {},
+      boundaries: (parsedCfg.boundaries as Record<string, unknown>) ?? { external: {}, internal: {} },
+      driftAdded: state.unreviewedBoundaries,
+      prismRisk: vibes.maxRisk,
+      vibes: vibes.present
+        ? {
+            present: true,
+            annotationsCount: vibes.annotationsCount,
+            verifiedCount: vibes.verifiedCount,
+            maxPrismRisk: vibes.maxRisk ?? 0,
+            highRiskCount: vibes.findings,
+            traceIncidents: vibes.findings,
+            traceResolved: vibes.resolved,
+            linesAdded: vibes.inserted,
+            linesRemoved: vibes.deleted,
+            filesTouchedCount: vibes.fileHotspots.length,
+            prismBuckets: vibes.prismBuckets,
+            fileHotspots: vibes.fileHotspots,
+          }
+        : null,
+    },
   }
 }
 
@@ -159,7 +244,8 @@ async function persistTelemetryAndDashboard($: EngineInterface, state: Neckbeard
   const updatedJsonl = upsertJsonlLedger(existing, record)
   await $.fs.write(jsonlFile, updatedJsonl)
   const allRecords = parseJsonlRecords(updatedJsonl)
-  const html = renderDashboardHtml(allRecords, {}, await $.clock.now())
+  const wsMeta = await buildCurrentWorkspaceMeta($, state)
+  const html = renderDashboardHtml(allRecords, wsMeta, await $.clock.now())
   await $.fs.write(`${dir}/dashboard.html`, html)
 }
 
@@ -168,7 +254,9 @@ async function launchDashboardInBrowser($: EngineInterface) {
   const jsonlFile = `${dir}/sessions.jsonl`
   const existing = await $.fs.read(jsonlFile).catch(() => '')
   const htmlFile = `${dir}/dashboard.html`
-  await $.fs.write(htmlFile, renderDashboardHtml(parseJsonlRecords(existing), {}, await $.clock.now()))
+  const state = await readHud($)
+  const wsMeta = await buildCurrentWorkspaceMeta($, state)
+  await $.fs.write(htmlFile, renderDashboardHtml(parseJsonlRecords(existing), wsMeta, await $.clock.now()))
   const isWin = (await $.env.get('OS')) === 'Windows_NT'
   const isMac = !isWin && (await $.process.run(['uname'])).stdout.trim() === 'Darwin'
   await $.process.run(isWin ? ['cmd', '/c', 'start', '', htmlFile] : [isMac ? 'open' : 'xdg-open', htmlFile])

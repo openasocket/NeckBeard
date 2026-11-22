@@ -1,8 +1,8 @@
 'use strict';
-// VIBES Protocol (.ai-audit/) telemetry reader.
+// VIBES Protocol (.ai-audit/) telemetry reader & visualizer data extractor.
 // When .ai-audit/manifest.json or .ai-audit/annotations.jsonl is present, NeckBeard
-// defaults to using VIBES provenance, PRISM risk scores, EVOLVE decisions, and TRACE
-// incident records for session/project instrumentation instead of duplicating scans.
+// defaults to using VIBES provenance, VERIFY attestations, PRISM risk scores, EVOLVE
+// decisions, and TRACE incident records for session/project instrumentation.
 
 const fs = require('fs');
 const path = require('path');
@@ -46,6 +46,15 @@ function readJsonlSafe(file) {
   }
 }
 
+function countDirEntriesSafe(dirPath) {
+  try {
+    if (!fs.existsSync(dirPath)) return 0;
+    return fs.readdirSync(dirPath).filter((e) => !e.startsWith('.')).length;
+  } catch {
+    return 0;
+  }
+}
+
 function countRangeLines(ranges) {
   if (!Array.isArray(ranges)) return 0;
   let total = 0;
@@ -61,7 +70,7 @@ function countRangeLines(ranges) {
   return total;
 }
 
-// Extracts project-level and per-session metrics from .ai-audit/manifest.json and annotations.jsonl.
+// Extracts project-level, per-session, and 5-pillar visualization telemetry from .ai-audit/.
 function readVibesTelemetry(root = process.cwd()) {
   if (!hasVibes(root)) return null;
   const dir = path.join(root, '.ai-audit');
@@ -71,12 +80,31 @@ function readVibesTelemetry(root = process.cwd()) {
   const sessions = new Map();
   let maxPrismRisk = 0;
   let highRiskCount = 0;
+  let verifiedCount = 0;
   let traceIncidents = 0;
   let traceResolved = 0;
   let decisions = Array.isArray(manifest.decisions) ? manifest.decisions.length : 0;
   let linesAdded = 0;
   let linesRemoved = 0;
   const filesTouched = new Set();
+  const fileStatsMap = new Map();
+  const prismBuckets = { low: 0, moderate: 0, high: 0, critical: 0 };
+  const decisionRecords = [];
+  const incidentRecords = [];
+  const recentAnnotations = [];
+
+  if (Array.isArray(manifest.decisions)) {
+    for (const d of manifest.decisions.slice(0, 15)) {
+      if (d && typeof d === 'object') {
+        decisionRecords.push({
+          id: String(d.id || d.decision_id || `DEC-${decisionRecords.length + 1}`),
+          title: String(d.title || d.summary || d.rationale || 'Recorded architectural decision').slice(0, 96),
+          status: String(d.status || 'accepted'),
+          timestamp: String(d.timestamp || d.created_at || ''),
+        });
+      }
+    }
+  }
 
   const ensureSession = (id, ts, model) => {
     const sid = String(id || 'vibes-session');
@@ -129,21 +157,18 @@ function readVibesTelemetry(root = process.cwd()) {
     if (!a || typeof a !== 'object') continue;
     const tsRaw = a.timestamp || a.created_at || a.started_at;
     const ts = tsRaw ? Date.parse(tsRaw) : NaN;
-    const sid = a.session_id || a.sessionId || (manifest.session_id) || 'vibes-default';
+    const sid = a.session_id || a.sessionId || manifest.session_id || 'vibes-default';
     const model = a.model || a.agent_model || (a.agent && a.agent.model) || '';
     const s = ensureSession(sid, Number.isFinite(ts) ? ts : undefined, model);
     s.turns += 1;
 
-    if (!s.name && (a.prompt || a.intent || a.summary || a.description)) {
-      s.name = String(a.prompt || a.intent || a.summary || a.description).split('\n')[0].slice(0, 60);
-    }
+    const summaryText = String(a.prompt || a.intent || a.summary || a.description || '').split('\n')[0].slice(0, 72);
+    if (!s.name && summaryText) s.name = summaryText.slice(0, 60);
+
+    const isVerified = Boolean(a.verified === true || a.status === 'verified' || a.attestation_id || a.dsse_hash);
+    if (isVerified) verifiedCount += 1;
 
     const file = a.file_path || a.file || a.path;
-    if (file) {
-      filesTouched.add(file);
-      s.files.add(file);
-    }
-
     const added = (typeof a.lines_added === 'number' ? a.lines_added : 0) ||
       countRangeLines(a.created_lines || a.added_lines || (a.changes && a.changes.created)) +
       countRangeLines(a.modified_lines || (a.changes && a.changes.modified));
@@ -154,6 +179,36 @@ function readVibesTelemetry(root = process.cwd()) {
     s.linesAdded += added;
     s.linesRemoved += removed;
 
+    const risk = typeof a.risk_score === 'number' ? a.risk_score : (a.prism && typeof a.prism.risk_score === 'number' ? a.prism.risk_score : null);
+    if (risk !== null && Number.isFinite(risk)) {
+      if (risk > maxPrismRisk) maxPrismRisk = risk;
+      if (risk > s.maxRisk) s.maxRisk = risk;
+      if (risk >= 0.8) prismBuckets.critical += 1;
+      else if (risk >= 0.6) prismBuckets.high += 1;
+      else if (risk >= 0.3) prismBuckets.moderate += 1;
+      else prismBuckets.low += 1;
+
+      if (risk >= 0.6) {
+        highRiskCount += 1;
+        s.secFound += 1;
+        if (isVerified || a.resolved === true || a.status === 'resolved') {
+          s.secFixed += 1;
+        }
+      }
+    }
+
+    if (file) {
+      filesTouched.add(file);
+      s.files.add(file);
+      const prev = fileStatsMap.get(file) || { file, annotations: 0, linesAdded: 0, linesRemoved: 0, maxRisk: 0, verified: true };
+      prev.annotations += 1;
+      prev.linesAdded += added;
+      prev.linesRemoved += removed;
+      if (risk !== null && Number.isFinite(risk) && risk > prev.maxRisk) prev.maxRisk = +risk.toFixed(2);
+      prev.verified = prev.verified && isVerified;
+      fileStatsMap.set(file, prev);
+    }
+
     if (typeof a.tokens_total === 'number') s.tokens += a.tokens_total;
     else if (a.usage && typeof a.usage === 'object') {
       const inTok = Number(a.usage.input_tokens || 0);
@@ -163,42 +218,75 @@ function readVibesTelemetry(root = process.cwd()) {
     }
     if (typeof a.cost_usd === 'number') s.costUsd = (s.costUsd || 0) + a.cost_usd;
 
-    const risk = typeof a.risk_score === 'number' ? a.risk_score : (a.prism && typeof a.prism.risk_score === 'number' ? a.prism.risk_score : null);
-    if (risk !== null && Number.isFinite(risk)) {
-      if (risk > maxPrismRisk) maxPrismRisk = risk;
-      if (risk > s.maxRisk) s.maxRisk = risk;
-      if (risk >= 0.6) {
-        highRiskCount += 1;
-        s.secFound += 1;
-        if (a.verified === true || a.resolved === true || a.status === 'resolved' || a.status === 'verified') {
-          s.secFixed += 1;
-        }
+    if (a.type === 'decision' || a.record_type === 'decision') {
+      decisions += 1;
+      if (decisionRecords.length < 15) {
+        decisionRecords.push({
+          id: String(a.id || a.decision_id || `DEC-${decisions}`),
+          title: summaryText || 'Agent decision record',
+          status: String(a.status || 'recorded'),
+          timestamp: String(tsRaw || ''),
+        });
       }
     }
 
-    if (a.type === 'decision' || a.record_type === 'decision') decisions += 1;
     if (a.type === 'incident' || a.record_type === 'incident' || a.ioc_id || a.trace_incident) {
       traceIncidents += 1;
       s.secFound += 1;
-      if (a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed') {
+      const isResolved = Boolean(a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed');
+      if (isResolved) {
         traceResolved += 1;
         s.secFixed += 1;
       }
+      if (incidentRecords.length < 15) {
+        incidentRecords.push({
+          id: String(a.id || a.incident_id || `INC-${traceIncidents}`),
+          iocId: String(a.ioc_id || a.rule_id || 'TRACE-IOC'),
+          severity: String(a.severity || (risk && risk >= 0.8 ? 'critical' : 'high')),
+          status: isResolved ? 'resolved' : String(a.status || 'open'),
+          summary: summaryText || String(a.ioc_id || 'TRACE security incident'),
+          timestamp: String(tsRaw || ''),
+        });
+      }
     }
+
+    recentAnnotations.push({
+      sessionId: String(sid).slice(0, 12),
+      timestamp: String(tsRaw || ''),
+      model: String(model || 'agent'),
+      file: String(file || '(session-level)'),
+      linesAdded: added,
+      linesRemoved: removed,
+      riskScore: risk !== null && Number.isFinite(risk) ? +risk.toFixed(2) : null,
+      verified: isVerified,
+      summary: summaryText || 'Annotated agent edit',
+    });
   }
 
-  // Also check .ai-audit/incidents/ directory if present
-  try {
-    const incDir = path.join(dir, 'incidents');
-    if (fs.existsSync(incDir)) {
-      const entries = fs.readdirSync(incDir);
-      traceIncidents = Math.max(traceIncidents, entries.filter((e) => !e.startsWith('.')).length);
-    }
-  } catch { /* ignore */ }
+  const incDirCount = countDirEntriesSafe(path.join(dir, 'incidents'));
+  traceIncidents = Math.max(traceIncidents, incDirCount);
+  const blobsCount = countDirEntriesSafe(path.join(dir, 'blobs'));
+  const attestationsCount = countDirEntriesSafe(path.join(dir, 'attestations'));
+  const iocRulesCount = countDirEntriesSafe(path.join(dir, 'iocs.d'));
+  const hasAuditDb = fs.existsSync(path.join(dir, 'audit.db')) || fs.existsSync(path.join(dir, 'wal'));
+
+  const fileHotspots = [...fileStatsMap.values()]
+    .sort((a, b) => (b.maxRisk - a.maxRisk) || ((b.linesAdded + b.linesRemoved) - (a.linesAdded + a.linesRemoved)))
+    .slice(0, 10);
 
   return {
     present: true,
     annotationsCount: annotations.length,
+    verifiedCount,
+    blobsCount,
+    attestationsCount,
+    iocRulesCount,
+    hasAuditDb,
+    prismBuckets,
+    fileHotspots,
+    decisionRecords,
+    incidentRecords,
+    recentAnnotations: recentAnnotations.slice(-16).reverse(),
     sessions: [...sessions.values()].map((s) => ({ ...s, filesCount: s.files.size, files: undefined })),
     maxPrismRisk: +maxPrismRisk.toFixed(2),
     highRiskCount,

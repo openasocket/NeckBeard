@@ -316,14 +316,14 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
           <table><thead><tr><th>Timestamp</th><th>Session</th><th>Attributed File</th><th>Line Attribution</th><th>PRISM Risk</th><th>VERIFY DSSE</th><th>Intent / Prompt Summary</th></tr></thead><tbody id="vibes-annotations-rows"></tbody></table>
         </div>
       </div>
-      <div class="adopt-bar">
+      <div class="adopt-bar" id="vibes-adopt-banner">
         <div style="max-width:700px">
           <div style="font:700 13px var(--mono);color:var(--cyan)">🚀 Unlock 5-Pillar VIBES (.ai-audit/) Provenance in Every Project</div>
           <div style="font-size:12.5px;color:var(--muted);margin-top:4px">
             Without VIBES, NeckBeard tracks session cost, token cache efficiency, guard blocks, and <code>.neckbeard.json</code> trust boundaries. Enabling <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> adds line-range file attribution, Ed25519 DSSE attestations locked by <code>hooks/guard.js</code>, per-turn PRISM risk scores for <code>/neckbeard-review</code>, EVOLVE decision records for <code>/neckbeard-debt</code>, and TRACE incident forensics.
           </div>
         </div>
-        <div class="adopt-cmd">npx vibecheck init &amp;&amp; vibecheck validate</div>
+        <div class="adopt-cmd">vibecheck init --project-name my-app --assurance-level high &amp;&amp; vibes install-hooks &amp;&amp; vibecheck verify</div>
       </div>
     </section>
 
@@ -403,29 +403,48 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
   function el(i){return document.getElementById(i)}
   function fmtTok(n){return n<1000?String(Math.round(n)):n<1e6?+(n/1e3).toFixed(1)+'k':+(n/1e6).toFixed(1)+'M'}
   function fmtDur(ms){var m=Math.round((ms||0)/60000);return m<60?m+'m':Math.floor(m/60)+'h '+(m%60)+'m'}
+  function aggAllVibes(){
+    var ks=Object.keys(meta),agg={present:false,vibesRepoCount:0,annotationsCount:0,verifiedCount:0,blobsCount:0,attestationsCount:0,iocRulesCount:0,maxPrismRisk:0,highRiskCount:0,traceIncidents:0,traceResolved:0,decisions:0,linesAdded:0,linesRemoved:0,filesTouchedCount:0,prismBuckets:{low:0,moderate:0,high:0,critical:0},fileHotspots:[],decisionRecords:[],incidentRecords:[],recentAnnotations:[]};
+    ks.forEach(function(k){
+      var v=meta[k]&&meta[k].vibes;if(!v||!v.present)return;
+      agg.present=true;agg.vibesRepoCount+=1;
+      agg.annotationsCount+=v.annotationsCount||0;agg.verifiedCount+=v.verifiedCount||0;
+      agg.blobsCount+=v.blobsCount||0;agg.attestationsCount+=v.attestationsCount||0;agg.iocRulesCount+=v.iocRulesCount||0;
+      if((v.maxPrismRisk||0)>agg.maxPrismRisk)agg.maxPrismRisk=v.maxPrismRisk;
+      agg.highRiskCount+=v.highRiskCount||0;agg.traceIncidents+=v.traceIncidents||0;agg.traceResolved+=v.traceResolved||0;
+      agg.decisions+=v.decisions||0;agg.linesAdded+=v.linesAdded||0;agg.linesRemoved+=v.linesRemoved||0;agg.filesTouchedCount+=v.filesTouchedCount||0;
+      var pb=v.prismBuckets||{};agg.prismBuckets.low+=pb.low||0;agg.prismBuckets.moderate+=pb.moderate||0;agg.prismBuckets.high+=pb.high||0;agg.prismBuckets.critical+=pb.critical||0;
+      (v.fileHotspots||[]).forEach(function(h){agg.fileHotspots.push(Object.assign({},h,{file:k+':'+h.file}))});
+      (v.decisionRecords||[]).forEach(function(d){agg.decisionRecords.push(Object.assign({},d,{id:k+'/'+d.id}))});
+      (v.incidentRecords||[]).forEach(function(inc){agg.incidentRecords.push(Object.assign({},inc,{iocId:k+':'+inc.iocId}))});
+      (v.recentAnnotations||[]).forEach(function(a){agg.recentAnnotations.push(Object.assign({},a,{file:k+':'+a.file}))});
+    });
+    if(!agg.present)return null;
+    agg.fileHotspots.sort(function(a,b){return(b.maxRisk-a.maxRisk)||((b.linesAdded+b.linesRemoved)-(a.linesAdded+a.linesRemoved))});
+    agg.recentAnnotations.sort(function(a,b){return String(b.timestamp||'').localeCompare(String(a.timestamp||''))});
+    return agg;
+  }
   function resolveVibes(wsKey){
     if(demoVibesMode)return SAMPLE_VIBES;
-    if(wsKey&&meta[wsKey]&&meta[wsKey].vibes&&meta[wsKey].vibes.present)return meta[wsKey].vibes;
-    if(!wsKey){
-      var ks=Object.keys(meta);
-      for(var i=0;i<ks.length;i++){var v=meta[ks[i]]&&meta[ks[i]].vibes;if(v&&v.present)return v}
-    }
-    return null;
+    if(wsKey)return(meta[wsKey]&&meta[wsKey].vibes&&meta[wsKey].vibes.present)?meta[wsKey].vibes:null;
+    return aggAllVibes();
   }
   function renderVibes(wsKey){
-    var v=resolveVibes(wsKey),chip=el('vibes-status-chip'),dbtn=el('vibes-demo-btn'),exp=el('vibes-explainer'),awrap=el('vibes-annotations-wrap');
+    var v=resolveVibes(wsKey),chip=el('vibes-status-chip'),dbtn=el('vibes-demo-btn'),exp=el('vibes-explainer'),awrap=el('vibes-annotations-wrap'),abar=el('vibes-adopt-banner');
     if(v&&v.present){
       chip.className=v.isDemo?'chip warn':'chip cyan';
-      chip.textContent=v.isDemo?'★ Interactive Reference VIBES (.ai-audit/) Forensics Active':'● VIBES (.ai-audit/) Active · 5-Pillar Deep Forensics Unlocked';
+      chip.textContent=v.isDemo?'★ Interactive Reference VIBES (.ai-audit/) Forensics Active':(v.vibesRepoCount?('● VIBES (.ai-audit/) Active Across '+v.vibesRepoCount+' Workspaces · PreToolUse Shield Armed'):'● VIBES (.ai-audit/) Active in Workspace · 5-Pillar Deep Forensics Unlocked');
       dbtn.textContent=v.isDemo?'Exit Reference Preview':'Toggle Reference Preview';
-      exp.innerHTML='<strong>VIBES Deep Forensics Active:</strong> Showing line-range file attribution (<code>VIBES v1.1</code>), Ed25519 DSSE attestation coverage (<code>VERIFY v1.0</code>), per-turn risk distribution &amp; sparkline (<code>PRISM v1.0</code>), architectural decision records (<code>EVOLVE v1.0</code>), and IoC incident response (<code>TRACE v1.0</code>).';
+      exp.innerHTML='<strong>VIBES Deep Forensics Active:</strong> Showing line-range file attribution (<code>VIBES v1.1</code>), Ed25519 DSSE &amp; high-assurance attestation coverage (<code>VERIFY v1.0</code>), per-turn risk distribution &amp; sparkline (<code>PRISM v1.0</code>), content-addressed reasoning &amp; decision records (<code>EVOLVE v1.0</code>), and IoC incident response (<code>TRACE v1.0</code>).';
       awrap.style.display='block';
+      if(abar)abar.style.display=v.isDemo?'flex':'none';
     }else{
       chip.className='chip warn';
-      chip.textContent='○ Standard Telemetry Mode (.ai-audit/ Not Detected in Workspace)';
+      chip.textContent='○ Standard Telemetry Mode (.ai-audit/ Not Detected in '+(wsKey||'Workspace')+')';
       dbtn.textContent='Preview Full VIBES (.ai-audit/) Forensics';
-      exp.innerHTML='<strong>Standard NeckBeard Telemetry Active:</strong> You have full access to session cost, prompt-cache economics, guard blocks, and <code>.neckbeard.json</code> trust boundaries below. Initialize <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> (or click <em>Preview Full VIBES Forensics</em>) to unlock cryptographic file attribution, PRISM risk trajectories, EVOLVE decision ledgers, and TRACE incident forensics.';
+      exp.innerHTML='<strong>Standard NeckBeard Telemetry Active:</strong> You have full access to session cost, prompt-cache economics, guard blocks, and <code>.neckbeard.json</code> trust boundaries below. Initialize <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> with <code>vibecheck init</code> + <code>vibes install-hooks</code> (or click <em>Preview Full VIBES Forensics</em>) to unlock cryptographic file attribution, PRISM risk trajectories, EVOLVE decision ledgers, and TRACE incident forensics.';
       awrap.style.display='none';
+      if(abar)abar.style.display='flex';
     }
     var av=v||{annotationsCount:0,verifiedCount:0,blobsCount:0,attestationsCount:0,iocRulesCount:0,maxPrismRisk:0,highRiskCount:0,traceIncidents:0,traceResolved:0,decisions:0,filesTouchedCount:0,prismBuckets:{low:0,moderate:0,high:0,critical:0},fileHotspots:[],decisionRecords:[],incidentRecords:[],recentAnnotations:[]};
     var ac=av.annotationsCount||0,vp=ac>0?Math.round(((av.verifiedCount||0)/ac)*100):0;

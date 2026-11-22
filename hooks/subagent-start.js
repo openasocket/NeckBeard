@@ -4,7 +4,7 @@
 // NECKBEARD_SUBAGENTS=0 turns this off.
 
 const { readInput, readLevel, emitContext, rules } = require('./lib');
-const { readProjectConfig, formatProjectContext } = require('./surface');
+const { ensureFreshBoundaryMap, formatProjectContext } = require('./surface');
 const { hasVibes, formatVibesContext } = require('./vibes');
 
 (async () => {
@@ -16,10 +16,9 @@ const { hasVibes, formatVibesContext } = require('./vibes');
   const cwd = input.cwd || process.cwd();
   let text = rules(level);
   try {
-    if (readProjectConfig(cwd) || process.env.NECKBEARD_SURFACE === '1') {
-      const ctx = formatProjectContext(cwd);
-      if (ctx) text += '\n\n' + ctx;
-    }
+    ensureFreshBoundaryMap(cwd);
+    const ctx = formatProjectContext(cwd);
+    if (ctx) text += '\n\n' + ctx;
   } catch { /* best-effort */ }
   try {
     if (hasVibes(cwd)) {

@@ -11,7 +11,7 @@ const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const { defaultLevel, normalizeLevel, rules } = require('../../hooks/lib.js');
 const { handleSubcommand, parseCommand } = require('../../hooks/prompt.js');
-const { readProjectConfig, formatProjectContext } = require('../../hooks/surface.js');
+const { ensureFreshBoundaryMap, formatProjectContext } = require('../../hooks/surface.js');
 const { hasVibes, formatVibesContext } = require('../../hooks/vibes.js');
 
 let sessionLevel = defaultLevel();
@@ -20,10 +20,9 @@ function assembleContextPayload(workspaceRoot = process.cwd()) {
   if (!sessionLevel || sessionLevel === 'off') return '';
   const blocks = [rules(sessionLevel)];
   try {
-    if (readProjectConfig(workspaceRoot) || process.env.NECKBEARD_SURFACE === '1') {
-      const mapBlock = formatProjectContext(workspaceRoot);
-      if (mapBlock) blocks.push(mapBlock);
-    }
+    ensureFreshBoundaryMap(workspaceRoot);
+    const mapBlock = formatProjectContext(workspaceRoot);
+    if (mapBlock) blocks.push(mapBlock);
   } catch {}
   try {
     if (hasVibes(workspaceRoot)) {

@@ -12,6 +12,7 @@ const { execFileSync } = require('child_process');
 
 const BUDGET = Number(process.env.NECKBEARD_SURFACE_CHARS || 1500);
 const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 680);
+const DEFAULT_MAP_MAX_AGE_MS = Number(process.env.NECKBEARD_MAP_MAX_AGE_HOURS || 24) * 60 * 60 * 1000;
 const MAX_FILES = 3000;
 const MAX_BYTES = 200 * 1024;
 const SRC = /\.(py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|java|kt|php|cs|swift|sh|yml|yaml)$/;
@@ -435,6 +436,35 @@ function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env)
   return merged;
 }
 
+// Ensures a project's persisted boundary map is populated and refreshed if empty, referencing deleted files, or older than maxAgeMs.
+function ensureFreshBoundaryMap(root = process.cwd(), env = process.env, maxAgeMs = DEFAULT_MAP_MAX_AGE_MS) {
+  const cfg = readProjectConfig(root, env);
+  if (!cfg) return null;
+  const activeFile = cfg.shared === false ? localProjectFile(root, env) : sharedProjectFile(root);
+  const flat = flattenBoundaries(cfg.boundaries);
+  let needsRefresh = flat.length === 0;
+  if (!needsRefresh && maxAgeMs > 0) {
+    try {
+      const st = fs.statSync(activeFile);
+      if (Date.now() - st.mtimeMs > maxAgeMs) needsRefresh = true;
+    } catch { /* ignore */ }
+  }
+  if (!needsRefresh) {
+    // Also refresh if any saved boundary file was deleted or moved
+    for (const entry of flat) {
+      const relFile = String(entry).split('->')[0];
+      if (relFile && !fs.existsSync(path.join(root, relFile))) {
+        needsRefresh = true;
+        break;
+      }
+    }
+  }
+  if (needsRefresh) {
+    return writeProjectConfig(root, { boundaries: buildBoundaryMap(root) }, env);
+  }
+  return cfg;
+}
+
 // Formats the concise, token-efficient load + per-boundary overrides + external/internal map + boundary drift alert.
 function formatProjectContext(root = process.cwd(), env = process.env) {
   const cfg = readProjectConfig(root, env);
@@ -490,12 +520,24 @@ module.exports = {
   checkRiskLoadExpiry,
   readProjectConfig,
   writeProjectConfig,
+  ensureFreshBoundaryMap,
   formatProjectContext,
   localProjectFile,
   sharedProjectFile,
   ALLOWED_SINKS,
   ALLOWED_LOAD_KEYS,
+  BOUNDARY_DETECTORS,
   CATEGORIES,
 };
 
-if (require.main === module) process.stdout.write(buildSurface(process.argv[2] || process.cwd()) + '\n');
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  if (args.includes('--map')) {
+    const targetDir = args.find((a) => !a.startsWith('-')) || process.cwd();
+    const boundaries = buildBoundaryMap(targetDir);
+    writeProjectConfig(targetDir, { boundaries });
+    process.stdout.write(formatProjectContext(targetDir) + '\n');
+  } else {
+    process.stdout.write(buildSurface(args[0] || process.cwd()) + '\n');
+  }
+}

@@ -6,7 +6,7 @@
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { readInput, readLevel, writeLevel, emitContext, rules } = require('./lib');
-const { readProjectConfig, formatProjectContext } = require('./surface');
+const { ensureFreshBoundaryMap, formatProjectContext } = require('./surface');
 const { hasVibes, formatVibesContext } = require('./vibes');
 
 (async () => {
@@ -18,12 +18,12 @@ const { hasVibes, formatVibesContext } = require('./vibes');
   const cwd = input.cwd || process.cwd();
   let text = rules(level);
 
-  // Inject persisted load default & concise internal/external trust-boundary map when configured or when NECKBEARD_SURFACE=1.
+  // Auto-refresh persisted boundary map if empty, referencing deleted files, or older than 24h,
+  // and always inject the concise internal/external trust-boundary map (<150 tokens).
   try {
-    if (readProjectConfig(cwd) || process.env.NECKBEARD_SURFACE === '1') {
-      const ctx = formatProjectContext(cwd);
-      if (ctx) text += '\n\n' + ctx;
-    }
+    ensureFreshBoundaryMap(cwd);
+    const ctx = formatProjectContext(cwd);
+    if (ctx) text += '\n\n' + ctx;
   } catch { /* best-effort */ }
 
   // Default to VIBES (.ai-audit/) telemetry summary when present.

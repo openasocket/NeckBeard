@@ -18,6 +18,7 @@ const {
   sanitizeProjectConfig,
   readProjectConfig,
   writeProjectConfig,
+  ensureFreshBoundaryMap,
   formatProjectContext,
 } = require('../hooks/surface');
 const { readVibesTelemetry, formatVibesContext, extractCleanTextSummary } = require('../hooks/vibes');
@@ -398,6 +399,11 @@ test('per-boundary load envelopes, boundary-expansion drift detection, and risk:
   const drift = detectBoundaryDrift(dir, env);
   assert.deepStrictEqual(drift.added, ['worker.js->proc']);
   assert.match(formatProjectContext(dir, env), /Boundary Drift \[new\]: \+1 unreviewed \(worker\.js->proc\)/);
+
+  // Verify ensureFreshBoundaryMap auto-refreshes when maxAgeMs has elapsed or a boundary file was deleted
+  const refreshed = ensureFreshBoundaryMap(dir, env, 1);
+  assert.ok(refreshed.boundaries.internal.exec.includes('worker.js->proc'));
+  assert.deepStrictEqual(detectBoundaryDrift(dir, env).added, []);
 
   // Verify risk: load-trigger expiry against project load (250 rps, 50k rows, webhook-in=2000 rps)
   const metrics = parseLoadMetrics('250 rps, 50k rows, 10 concurrent writers, 128 MB');

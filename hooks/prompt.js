@@ -71,6 +71,10 @@ function handleSubcommand(cmd, cwd) {
   if (cmd.action === 'map') {
     const boundaries = buildBoundaryMap(cwd);
     const saved = writeProjectConfig(cwd, { boundaries });
+    try {
+      const child = spawn(process.execPath, [path.join(__dirname, 'band-import.js')], { cwd, detached: true, stdio: 'ignore' });
+      child.unref();
+    } catch { /* best-effort */ }
     return `NECKBEARD trust-boundary map updated (${saved.shared ? '.neckbeard.json, shared' : 'local'}).\n\n${formatProjectContext(cwd)}`;
   }
 

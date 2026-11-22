@@ -17,6 +17,7 @@ const {
   buildBoundaryMap,
   readProjectConfig,
   writeProjectConfig,
+  ensureFreshBoundaryMap,
   formatProjectContext,
   detectBoundaryDrift,
 } = require('../hooks/surface.js');
@@ -169,10 +170,11 @@ export default function registerNeckbeardPi(host) {
     }
     const cwd = process.cwd();
     const parts = [rules(activeLevel)];
-    if (readProjectConfig(cwd) || process.env.NECKBEARD_SURFACE === '1') {
+    try {
+      ensureFreshBoundaryMap(cwd);
       const projCtx = formatProjectContext(cwd);
       if (projCtx) parts.push(projCtx);
-    }
+    } catch {}
     if (hasVibes(cwd)) {
       const vibesCtx = formatVibesContext(cwd);
       if (vibesCtx) parts.push(vibesCtx);

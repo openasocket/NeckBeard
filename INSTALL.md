@@ -1,6 +1,8 @@
 # Install
 
-[![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)
+<p align="left">
+  <a href="https://neckbeard.tech"><img src="assets/badge.png" width="456" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
+</p>
 
 Pick your agent below. Not listed? Most agents read [`AGENTS.md`](AGENTS.md): copy it into your project root, or point your agent at [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). For the full host-to-manifest matrix, see [Agent Portability](docs/agent-portability.md).
 

@@ -1,6 +1,8 @@
 # Agent Portability
 
-[![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)
+<p align="left">
+  <a href="https://neckbeard.tech"><img src="../assets/badge.png" width="456" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
+</p>
 
 NeckBeard is a host-portable principal-engineer skillset. The writing rules and gates live in one place—[`skills/neckbeard/SKILL.md`](../skills/neckbeard/SKILL.md) and [`AGENTS.md`](../AGENTS.md)—and host-specific manifests are thin pointers that never fork or restate those gates.
 

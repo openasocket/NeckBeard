@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://neckbeard.tech"><img src="https://neckbeard.tech/assets/badge.svg" width="456" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
+  <a href="https://neckbeard.tech"><img src="assets/badge.png" width="456" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
 </p>
 
 <p align="center">
@@ -270,7 +270,7 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 ## The NeckBeard Badge & Seal of Survival ([neckbeard.tech](https://neckbeard.tech))
 
 <p align="center">
-  <a href="https://neckbeard.tech"><img src="assets/badge.svg" width="456" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
+  <a href="https://neckbeard.tech"><img src="assets/badge.png" width="456" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale"></a>
 </p>
 
 <p align="center">
@@ -285,19 +285,19 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 **Compact README Pill Badge (Markdown):**
 
 ```markdown
-[![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)
+[![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.png)](https://neckbeard.tech)
 ```
 
 **Full "Built & Audited with NeckBeard" Value Seal (Markdown):**
 
 ```markdown
-[![Built & Audited with NeckBeard — Principal-Engineer Verified](https://neckbeard.tech/assets/seal.svg)](https://neckbeard.tech)
+[![Built & Audited with NeckBeard — Principal-Engineer Verified](https://neckbeard.tech/assets/seal.png)](https://neckbeard.tech)
 ```
 
 **One-Click AI Agent Prompt (Audit, Fix & Add the Badge):**
 
 ```text
-Run /neckbeard-audit on this repository, refactor or rewrite every confirmed Must-fix and Should-fix finding, verify all tests pass, and then add the NeckBeard Audited badge ([![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)) to README.md.
+Run /neckbeard-audit on this repository, refactor or rewrite every confirmed Must-fix and Should-fix finding, verify all tests pass, and then add the NeckBeard Audited badge ([![NeckBeard Audited: Minimal Code · Boundary Safe · Right-Sized Scale](https://neckbeard.tech/assets/badge.png)](https://neckbeard.tech)) to README.md.
 ```
 
 ---
@@ -330,5 +330,5 @@ No dependencies. Node 18 or later.
 ---
 
 <p align="center">
-  <a href="https://neckbeard.tech"><img src="https://neckbeard.tech/assets/seal.svg" width="380" alt="Built & Audited with NeckBeard — Principal-Engineer Verified"></a>
+  <a href="https://neckbeard.tech"><img src="assets/seal.png" width="380" alt="Built & Audited with NeckBeard — Principal-Engineer Verified"></a>
 </p>

@@ -251,15 +251,35 @@ async function persistTelemetryAndDashboard($: EngineInterface, state: Neckbeard
 
 async function launchDashboardInBrowser($: EngineInterface) {
   const dir = await resolveTelemetryDir($)
-  const jsonlFile = `${dir}/sessions.jsonl`
-  const existing = await $.fs.read(jsonlFile).catch(() => '')
   const htmlFile = `${dir}/dashboard.html`
-  const state = await readHud($)
-  const wsMeta = await buildCurrentWorkspaceMeta($, state)
-  await $.fs.write(htmlFile, renderDashboardHtml(parseJsonlRecords(existing), wsMeta, await $.clock.now()))
+  try {
+    const hasExistingHtml = await $.fs.exists(htmlFile).catch(() => false)
+    const state = await readHud($)
+    if (!hasExistingHtml || state.turnCount > 0) {
+      const jsonlFile = `${dir}/sessions.jsonl`
+      const existing = await $.fs.read(jsonlFile).catch(() => '')
+      const wsMeta = await buildCurrentWorkspaceMeta($, state)
+      await $.fs.write(htmlFile, renderDashboardHtml(parseJsonlRecords(existing), wsMeta, await $.clock.now()))
+    }
+  } catch {
+    // Even if rebuilding fails or times out on a large ledger, still open the existing dashboard.html
+  }
+  const homeDir = await resolveHomeDir($)
   const isWin = (await $.env.get('OS')) === 'Windows_NT'
-  const isMac = !isWin && (await $.process.run(['uname'])).stdout.trim() === 'Darwin'
-  await $.process.run(isWin ? ['cmd', '/c', 'start', '', htmlFile] : [isMac ? 'open' : 'xdg-open', htmlFile])
+  if (isWin) {
+    await $.process.run(['cmd', '/c', 'start', '', htmlFile])
+    return
+  }
+  const uname = await $.process.run(['uname']).catch(() => ({ stdout: homeDir.startsWith('/Users/') ? 'Darwin' : 'Linux' }))
+  const isMac = uname.stdout.trim() === 'Darwin' || homeDir.startsWith('/Users/')
+  if (isMac) {
+    const res = await $.process.run(['open', htmlFile]).catch(() => ({ exitCode: 1 }))
+    if (res.exitCode !== 0) {
+      await $.process.run(['/usr/bin/open', htmlFile])
+    }
+  } else {
+    await $.process.run(['xdg-open', htmlFile])
+  }
 }
 
 async function initializeHudSession($: EngineInterface) {

@@ -405,4 +405,13 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   const claudeRow = dryReport.results.find((r) => r.harness === 'Claude Code');
   assert.strictEqual(claudeRow.detected, true);
   assert.match(installer.formatSyncReport(dryReport), /NeckBeard Multi-Harness Installer & Updater/);
+
+  // Verify Claude Code AbovePrompt TypeScript modules (analyzer.ts & dashboard.ts) execute cleanly without runtime errors
+  const analyzerMod = await import('../hooks/band/analyzer.ts');
+  const dashboardMod = await import('../hooks/band/dashboard.ts');
+  assert.strictEqual(typeof analyzerMod.computeReusePercentage, 'function');
+  assert.strictEqual(typeof dashboardMod.renderDashboardHtml, 'function');
+  const renderedHtml = dashboardMod.renderDashboardHtml([], {}, Date.now());
+  assert.ok(renderedHtml.includes('NeckBeard Security &amp; Engineering Command Center'));
+  assert.ok(renderedHtml.includes('VIBES Protocol (.ai-audit/)'));
 });

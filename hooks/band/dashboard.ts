@@ -611,7 +611,7 @@ export function renderDashboardHtml(
         <div style="max-width:700px">
           <div style="font:700 13px var(--nb-mono);color:var(--nb-cyan)">🚀 Unlock 5-Pillar VIBES (.ai-audit/) Provenance in Every Project</div>
           <div style="font-size:12.5px;color:var(--nb-muted);margin-top:4px">
-            Without VIBES, NeckBeard tracks session cost, token cache efficiency, guard blocks, and `.neckbeard.json` trust boundaries. Enabling <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> adds line-range file attribution, Ed25519 DSSE attestations locked by <code>hooks/guard.js</code>, per-turn PRISM risk scores for <code>/neckbeard-review</code>, EVOLVE decision records for <code>/neckbeard-debt</code>, and TRACE incident forensics.
+            Without VIBES, NeckBeard tracks session cost, token cache efficiency, guard blocks, and <code>.neckbeard.json</code> trust boundaries. Enabling <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> adds line-range file attribution, Ed25519 DSSE attestations locked by <code>hooks/guard.js</code>, per-turn PRISM risk scores for <code>/neckbeard-review</code>, EVOLVE decision records for <code>/neckbeard-debt</code>, and TRACE incident forensics.
           </div>
         </div>
         <div class="adopt-code">npx vibecheck init &amp;&amp; vibecheck validate</div>

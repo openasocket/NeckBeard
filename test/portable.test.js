@@ -57,6 +57,10 @@ test('skill directory layout', () => {
     'hooks/vibes.js',
     'pi-extension/index.js',
     '.opencode/plugins/neckbeard.mjs',
+    'assets/badge.svg',
+    'assets/badge.png',
+    'assets/seal.svg',
+    'assets/seal.png',
     'AGENTS.md',
   ]) {
     assert.strictEqual(fs.existsSync(p(required)), true, `${required} must exist`);

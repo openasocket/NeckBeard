@@ -708,7 +708,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
         var tr=document.createElement('tr'),rt=a.riskScore!=null?a.riskScore.toFixed(2):'0.00';
         var fullTxt=a.fullText||a.summary||'Annotated turn';
         tr.className='crow';
-        tr.title=fullTxt+'\n(Click row to expand full provenance text)';
+        tr.title=fullTxt+'\\n(Click row to expand full provenance text)';
         var dTr=document.createElement('tr');
         dTr.style.display='none';
         dTr.style.background='#070c0a';
@@ -1091,7 +1091,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
         var tr=document.createElement('tr'),isB=f.extSinks.length>0&&f.intSinks.length>0,tot=f.extSinks.length+f.intSinks.length;
         tr.className='crow';
         var tips=sinkGuidanceForFile(f);
-        tr.title=f.file+'\n'+tips.join('\n')+'\n(Click row to expand security & architecture guidance)';
+        tr.title=f.file+'\\n'+tips.join('\\n')+'\\n(Click row to expand security & architecture guidance)';
         var rl=isSec
           ?(f.isDrift?'⚠ Unreviewed Drift (+new)':isB?'⚡ Cross-Boundary Bridge ([ext] ➔ [int])':tot>=2?('🛡️ Multi-Sink Isolation ('+tot+' sinks)'):'● Single-Sink Boundary')
           :(isB?'🔌➔🗄️ Full-Stack Adapter & Bridge':f.extSinks.length>0?'🔌 External Interface Adapter':(f.intSinks.indexOf('sql')>=0||f.intSinks.indexOf('fs')>=0||f.intSinks.indexOf('serde')>=0)?'🗄️ Persistence / Schema Module':(f.intSinks.indexOf('auth')>=0||f.intSinks.indexOf('crypto')>=0)?'🔐 Security / Crypto Service':'⚙️ Internal Runtime Module');
@@ -1103,7 +1103,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
         dTd.style.padding='12px 16px';
         var gBox=document.createElement('div');
         gBox.style.cssText='background:#0b110e;border:1px solid '+(isB?'var(--amber)':'var(--emerald)')+';border-radius:10px;padding:12px 14px;font:400 12px/1.6 var(--mono);color:var(--text);white-space:pre-wrap';
-        gBox.textContent='File: '+f.file+' (Subsystem: '+f.module+')\nExternal Sinks: '+(f.extSinks.length?f.extSinks.map(function(s){return'['+s+'] '+(EXT_META[s]?EXT_META[s].label:s)}).join(' · '):'None (internal only)')+'\nInternal Sinks: '+(f.intSinks.length?f.intSinks.map(function(s){return'['+s+'] '+(INT_META[s]?INT_META[s].label:s)}).join(' · '):'None (perimeter only)')+'\n\nNeckBeard Boundary Guidance:\n• '+tips.join('\n• ');
+        gBox.textContent='File: '+f.file+' (Subsystem: '+f.module+')\\nExternal Sinks: '+(f.extSinks.length?f.extSinks.map(function(s){return'['+s+'] '+(EXT_META[s]?EXT_META[s].label:s)}).join(' · '):'None (internal only)')+'\\nInternal Sinks: '+(f.intSinks.length?f.intSinks.map(function(s){return'['+s+'] '+(INT_META[s]?INT_META[s].label:s)}).join(' · '):'None (perimeter only)')+'\\n\\nNeckBeard Boundary Guidance:\\n• '+tips.join('\\n• ');
         dTd.appendChild(gBox);
         dTr.appendChild(dTd);
         var fCell=null;
@@ -1165,7 +1165,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
       var cH=iTok>0?Math.round(((tb.cachedReadTokens||0)/iTok)*100):0,sv=estSaved(r);
       var fullP=r.fullPrompt||r.taskTitle||'Session';
       var outS=r.assistantSummary||'';
-      tr.title='PROMPT:\n'+fullP+(outS?('\n\nASSISTANT OUTCOME:\n'+outS):'')+'\n\n(Click row to expand inline)';
+      tr.title='PROMPT:\\n'+fullP+(outS?('\\n\\nASSISTANT OUTCOME:\\n'+outS):'')+'\\n\\n(Click row to expand inline)';
       var dTr=document.createElement('tr');
       dTr.style.display='none';
       dTr.style.background='#070c0a';

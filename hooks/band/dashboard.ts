@@ -1201,7 +1201,7 @@ export function renderDashboardHtml(
         var riskTxt = a.riskScore != null ? a.riskScore.toFixed(2) : '0.00';
         var fullTxt = a.fullText || a.summary || 'Annotated turn';
         tr.className = 'clickable-row';
-        tr.title = fullTxt + '\n(Click row to expand full provenance text)';
+        tr.title = fullTxt + '\\n(Click row to expand full provenance text)';
         var dTr = document.createElement('tr');
         dTr.style.display = 'none';
         dTr.style.background = '#070c0a';
@@ -1886,7 +1886,7 @@ export function renderDashboardHtml(
         var isBridge = f.extSinks.length > 0 && f.intSinks.length > 0;
         var totalSinks = f.extSinks.length + f.intSinks.length;
         var tips = sinkGuidanceForFile(f);
-        tr.title = f.file + '\n' + tips.join('\n') + '\n(Click row to expand security & architecture guidance)';
+        tr.title = f.file + '\\n' + tips.join('\\n') + '\\n(Click row to expand security & architecture guidance)';
         var roleLabel = isSec
           ? (f.isDrift ? '⚠ Unreviewed Drift (+new)' : isBridge ? '⚡ Cross-Boundary Bridge ([ext] ➔ [int])' : totalSinks >= 2 ? ('🛡️ Multi-Sink Isolation (' + totalSinks + ' sinks)') : '● Single-Sink Boundary')
           : (isBridge ? '🔌➔🗄️ Full-Stack Adapter & Bridge' : f.extSinks.length > 0 ? '🔌 External Interface Adapter' : (f.intSinks.indexOf('sql') >= 0 || f.intSinks.indexOf('fs') >= 0 || f.intSinks.indexOf('serde') >= 0) ? '🗄️ Persistence / Schema Module' : (f.intSinks.indexOf('auth') >= 0 || f.intSinks.indexOf('crypto') >= 0) ? '🔐 Security / Crypto Service' : '⚙️ Internal Runtime Module');
@@ -1899,7 +1899,7 @@ export function renderDashboardHtml(
         dTd.style.padding = '12px 16px';
         var gBox = document.createElement('div');
         gBox.style.cssText = 'background:#0b110e;border:1px solid ' + (isBridge ? 'var(--nb-amber)' : 'var(--nb-emerald)') + ';border-radius:10px;padding:12px 14px;font:400 12px/1.6 var(--nb-mono);color:var(--nb-text);white-space:pre-wrap';
-        gBox.textContent = 'File: ' + f.file + ' (Subsystem: ' + f.module + ')\nExternal Sinks: ' + (f.extSinks.length ? f.extSinks.map(function(s) { return '[' + s + '] ' + (EXT_SINK_META[s] ? EXT_SINK_META[s].label : s); }).join(' · ') : 'None (internal only)') + '\nInternal Sinks: ' + (f.intSinks.length ? f.intSinks.map(function(s) { return '[' + s + '] ' + (INT_SINK_META[s] ? INT_SINK_META[s].label : s); }).join(' · ') : 'None (perimeter only)') + '\n\nNeckBeard Boundary Guidance:\n• ' + tips.join('\n• ');
+        gBox.textContent = 'File: ' + f.file + ' (Subsystem: ' + f.module + ')\\nExternal Sinks: ' + (f.extSinks.length ? f.extSinks.map(function(s) { return '[' + s + '] ' + (EXT_SINK_META[s] ? EXT_SINK_META[s].label : s); }).join(' · ') : 'None (internal only)') + '\\nInternal Sinks: ' + (f.intSinks.length ? f.intSinks.map(function(s) { return '[' + s + '] ' + (INT_SINK_META[s] ? INT_SINK_META[s].label : s); }).join(' · ') : 'None (perimeter only)') + '\\n\\nNeckBeard Boundary Guidance:\\n• ' + tips.join('\\n• ');
         dTd.appendChild(gBox);
         dTr.appendChild(dTd);
 
@@ -2018,7 +2018,7 @@ export function renderDashboardHtml(
       var savedUsd = estimateCacheSavingsUsd(r);
       var fullP = r.fullPrompt || r.taskTitle || 'Session';
       var outS = r.assistantSummary || '';
-      tr.title = 'PROMPT:\n' + fullP + (outS ? ('\n\nASSISTANT OUTCOME:\n' + outS) : '') + '\n\n(Click row to expand inline)';
+      tr.title = 'PROMPT:\\n' + fullP + (outS ? ('\\n\\nASSISTANT OUTCOME:\\n' + outS) : '') + '\\n\\n(Click row to expand inline)';
 
       var dTr = document.createElement('tr');
       dTr.style.display = 'none';

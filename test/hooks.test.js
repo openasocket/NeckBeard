@@ -479,6 +479,15 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   const renderedHtml = dashboardMod.renderDashboardHtml([], {}, Date.now());
   assert.ok(renderedHtml.includes('NeckBeard Security &amp; Engineering Command Center'));
   assert.ok(renderedHtml.includes('VIBES Protocol (.ai-audit/)'));
+  const vm = require('vm');
+  const tsScriptMatch = renderedHtml.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(tsScriptMatch && tsScriptMatch[1], 'dashboard.ts emits inline script');
+  assert.doesNotThrow(() => new vm.Script(tsScriptMatch[1]), 'dashboard.ts inline script is valid JavaScript');
+  const bandImportMod = require('../hooks/band-import');
+  const jsRenderedHtml = bandImportMod.renderDashboardHtml([], {}, Date.now());
+  const jsScriptMatch = jsRenderedHtml.match(/<script>([\s\S]*?)<\/script>/);
+  assert.ok(jsScriptMatch && jsScriptMatch[1], 'band-import.js emits inline script');
+  assert.doesNotThrow(() => new vm.Script(jsScriptMatch[1]), 'band-import.js inline script is valid JavaScript');
 
   // Verify System Architecture & Inter-Module Data Flow quantification & sanitization in .neckbeard.json
   const surfaceMod = require('../hooks/surface');

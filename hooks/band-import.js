@@ -13,7 +13,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { claudeDir, bandDir, configBase, readGuardStats } = require('./lib');
 const { hasVibes, readVibesTelemetry, extractCleanTextSummary } = require('./vibes');
-const { buildBoundaryMap, detectBoundaryDrift, flattenBoundaries, readProjectConfig } = require('./surface');
+const { buildBoundaryMap, buildArchitectureMap, detectBoundaryDrift, flattenBoundaries, readProjectConfig } = require('./surface');
 
 const STALE_TITLE_RE = /^(?:#\s*(?:Context|Instructions|Overview|Task|Tasks|Prior Conversation)|Interactive coding session$)/i;
 
@@ -993,7 +993,9 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     function node(t,a,p,txt){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,String(a[k]));if(txt!=null)n.textContent=String(txt);if(p)p.appendChild(n);return n}
     var drift=topo.drift,bCnt=topo.files.filter(function(f){return f.extSinks.length>0&&f.intSinks.length>0}).length;
     var sumEl=el('topo-summary');
-    if(sumEl)sumEl.textContent=activeSub.desc+' Showing '+topo.files.length+' of '+baseTopo.allFiles.length+' boundary file(s) across '+topo.modNodes.length+' '+(wsKey?'module(s)':'repositories')+' ('+bCnt+' cross-boundary bridge files).';
+    var archMeta=wsKey&&meta[wsKey]&&meta[wsKey].architecture;
+    var flowSummaryTxt=(archMeta&&archMeta.flows&&archMeta.flows.length)?(' · Inter-module flows ('+archMeta.flowCount+'): '+archMeta.flows.slice(0,5).join(', ')):'';
+    if(sumEl)sumEl.textContent=activeSub.desc+' Showing '+topo.files.length+' of '+baseTopo.allFiles.length+' boundary file(s) across '+topo.modNodes.length+' '+(wsKey?'module(s)':'repositories')+' ('+bCnt+' cross-boundary bridge files)'+flowSummaryTxt+'.';
     var db=el('ov-drift');
     if(drift.length){db.className='chip warn';db.textContent='⚠ +'+drift.length+' Unreviewed Boundary Drift: '+drift.slice(0,3).join(', ')}
     else{db.className='chip';db.textContent='✓ '+baseTopo.allFiles.length+' Boundary Files Mapped ('+(wsKey||'Portfolio')+')'}
@@ -1473,6 +1475,9 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
         };
       }
     }
+    const arch = (wsCfg && wsCfg.architecture && Array.isArray(wsCfg.architecture.modules) && wsCfg.architecture.modules.length > 0)
+      ? wsCfg.architecture
+      : (canScanBounds ? buildArchitectureMap(wsPath, 16, 24) : null);
     const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };
     const rawVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;
     const compactVibes = rawVibes ? { ...rawVibes, sessions: undefined } : null;
@@ -1480,6 +1485,7 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
       load: (wsCfg && wsCfg.load) || '',
       boundaryLoad: (wsCfg && wsCfg.boundaryLoad) || {},
       boundaries: bounds || { external: {}, internal: {} },
+      architecture: arch || { fileCount: 0, moduleCount: 0, boundaryFileCount: 0, bridgeCount: 0, flowCount: 0, modules: [], flows: [] },
       driftAdded: (wsDrift && wsDrift.added) || [],
       prismRisk: rawVibes ? rawVibes.maxPrismRisk : null,
       vibesDecisions: rawVibes ? rawVibes.decisions : 0,

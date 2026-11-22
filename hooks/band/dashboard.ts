@@ -1712,8 +1712,10 @@ export function renderDashboardHtml(
     var bridgeFilesCount = topo.files.filter(function(f) { return f.extSinks.length > 0 && f.intSinks.length > 0; }).length;
 
     var summaryEl = el('topo-summary');
+    var archMeta = wsKey && meta[wsKey] && meta[wsKey].architecture;
+    var flowSummaryTxt = (archMeta && archMeta.flows && archMeta.flows.length) ? (' · Inter-module flows (' + archMeta.flowCount + '): ' + archMeta.flows.slice(0, 5).join(', ')) : '';
     if (summaryEl) {
-      summaryEl.textContent = activeSub.desc + ' Showing ' + topo.files.length + ' of ' + baseTopo.allFiles.length + ' boundary file(s) across ' + topo.modNodes.length + ' ' + (wsKey ? 'module(s)' : 'repositories') + ' (' + bridgeFilesCount + ' cross-boundary bridge files).';
+      summaryEl.textContent = activeSub.desc + ' Showing ' + topo.files.length + ' of ' + baseTopo.allFiles.length + ' boundary file(s) across ' + topo.modNodes.length + ' ' + (wsKey ? 'module(s)' : 'repositories') + ' (' + bridgeFilesCount + ' cross-boundary bridge files)' + flowSummaryTxt + '.';
     }
 
     var driftBadge = el('ov-drift');

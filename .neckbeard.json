@@ -41,7 +41,6 @@
         "scripts/install-all.js->fs,serde"
       ],
       "exec": [
-        ".opencode/plugins/neckbeard.mjs->env",
         "hooks/band-import.js->proc",
         "hooks/band/analyzer.ts->proc,crypto,env",
         "hooks/guard.js->env",
@@ -50,7 +49,6 @@
         "hooks/session-start.js->proc,env",
         "hooks/subagent-start.js->env",
         "hooks/surface.js->proc,crypto,env",
-        "pi-extension/index.js->env",
         "scripts/install-all.js->proc"
       ],
       "ai": [
@@ -61,5 +59,25 @@
         "scripts/install-all.js->ai"
       ]
     }
+  },
+  "architecture": {
+    "fileCount": 16,
+    "moduleCount": 6,
+    "boundaryFileCount": 14,
+    "bridgeCount": 6,
+    "flowCount": 3,
+    "modules": [
+      "hooks:gateway(9f,3b)",
+      "hooks/band:gateway(3f,2b)",
+      "scripts:gateway(1f,1b)",
+      ".github/workflows:pipeline(1f,0b)",
+      ".opencode:persistence(1f,0b)",
+      "pi-extension:core(1f,0b)"
+    ],
+    "flows": [
+      ".opencode->hooks",
+      "pi-extension->hooks",
+      "scripts->hooks"
+    ]
   }
 }

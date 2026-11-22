@@ -44,6 +44,11 @@ const ALLOWED_LOAD_KEYS = new Set([
   'ingress', 'egress', 'supply', 'data', 'exec',
 ]);
 
+// Closed enum of allowed architectural subsystem roles in .neckbeard.json.
+const ALLOWED_ARCH_ROLES = new Set([
+  'gateway', 'interface', 'service', 'persistence', 'security', 'runtime', 'pipeline', 'core',
+]);
+
 // Patterns that must always be censored from load strings or boundary entries.
 const SENSITIVE_TEXT = /(?:https?:\/\/\S+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[\w.+-]+@[\w-]+\.[\w.-]+\b|\b[\w-]+\.(?:internal|corp|local|lan|amazonaws\.com|rds\.amazonaws\.com|svc\.cluster\.local)\b|\/(?:Users|home|private|var\/folders)\/\S+|[A-Za-z]:\\\S+|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|npm_[A-Za-z0-9]{20,})\b)/gi;
 
@@ -171,6 +176,141 @@ function buildBoundaryMap(root = process.cwd(), maxPerCategory = 16) {
   return { external: ext, internal: int };
 }
 
+function moduleNameForRelPath(relPath) {
+  const parts = String(relPath || '').split('/').filter(Boolean);
+  if (parts.length <= 1) return '(root)';
+  if (parts[0] === '.github' && parts[1] === 'workflows') return '.github/workflows';
+  if ((parts[0] === 'packages' || parts[0] === 'crates' || parts[0] === 'apps' || parts[0] === 'hooks' || parts[0] === 'src' || parts[0] === 'functions') && parts.length >= 3) {
+    return `${parts[0]}/${parts[1]}`;
+  }
+  return parts[0];
+}
+
+// Quantifies project module architecture, boundary density, cross-boundary bridges, and inter-module import/data flows.
+function buildArchitectureMap(root = process.cwd(), maxModules = 16, maxFlows = 24) {
+  const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
+  const modStats = new Map();
+  const knownModules = new Set();
+  const fileContents = [];
+  let boundaryFileCount = 0;
+  let totalBridges = 0;
+
+  for (const f of files) {
+    const mod = moduleNameForRelPath(f);
+    knownModules.add(mod);
+    if (!modStats.has(mod)) {
+      modStats.set(mod, {
+        name: mod,
+        files: 0,
+        boundaryFiles: 0,
+        bridges: 0,
+        ext: new Set(),
+        int: new Set(),
+      });
+    }
+    const ms = modStats.get(mod);
+    ms.files += 1;
+
+    if (/^\.github\/workflows\/.+\.(?:yml|yaml)$/.test(f)) {
+      ms.boundaryFiles += 1;
+      boundaryFileCount += 1;
+      ms.ext.add('ci');
+      continue;
+    }
+    if (/\.(?:yml|yaml)$/.test(f)) continue;
+
+    let text;
+    try {
+      const full = path.join(root, f);
+      const st = fs.lstatSync(full);
+      if (!st.isFile() || st.size > MAX_BYTES) continue;
+      text = fs.readFileSync(full, 'utf8');
+    } catch { continue; }
+
+    fileContents.push({ file: f, mod, text });
+
+    let hasExt = false;
+    let hasInt = false;
+    if (BOUNDARY_DETECTORS.httpIn.test(text)) { ms.ext.add('http-in'); hasExt = true; }
+    if (BOUNDARY_DETECTORS.cliIn.test(text)) { ms.ext.add('cli-in'); hasExt = true; }
+    if (BOUNDARY_DETECTORS.webhookIn.test(text)) { ms.ext.add('webhook-in'); hasExt = true; }
+    if (BOUNDARY_DETECTORS.httpOut.test(text)) { ms.ext.add('http-out'); hasExt = true; }
+
+    if (BOUNDARY_DETECTORS.auth.test(text)) { ms.int.add('auth'); hasInt = true; }
+    if (BOUNDARY_DETECTORS.sql.test(text)) { ms.int.add('sql'); hasInt = true; }
+    if (BOUNDARY_DETECTORS.fs.test(text)) { ms.int.add('fs'); hasInt = true; }
+    if (BOUNDARY_DETECTORS.serde.test(text)) { ms.int.add('serde'); hasInt = true; }
+    if (BOUNDARY_DETECTORS.proc.test(text)) { ms.int.add('proc'); hasInt = true; }
+    if (BOUNDARY_DETECTORS.crypto.test(text)) { ms.int.add('crypto'); hasInt = true; }
+    if (BOUNDARY_DETECTORS.env.test(text)) { ms.int.add('env'); hasInt = true; }
+    if (BOUNDARY_DETECTORS.ai.test(text)) { ms.int.add('ai'); hasInt = true; }
+
+    if (hasExt || hasInt) {
+      ms.boundaryFiles += 1;
+      boundaryFileCount += 1;
+    }
+    if (hasExt && hasInt) {
+      ms.bridges += 1;
+      totalBridges += 1;
+    }
+  }
+
+  // Extract directed inter-module import / data-flow edges (JS/TS require/import, Rust crate::, Python from/import)
+  const flowSet = new Set();
+  const relImportRe = /(?:require\s*\(\s*['"](\.[^'"]+)['"]\s*\)|from\s+['"](\.[^'"]+)['"])/g;
+  const rustImportRe = /\buse\s+crate::([a-zA-Z0-9_]+)/g;
+
+  for (const { file, mod, text } of fileContents) {
+    const dir = path.posix.dirname(file);
+    for (const m of text.matchAll(relImportRe)) {
+      const spec = m[1] || m[2];
+      if (!spec) continue;
+      const targetRel = path.posix.normalize(path.posix.join(dir, spec));
+      if (targetRel.startsWith('..')) continue;
+      const targetMod = moduleNameForRelPath(targetRel);
+      if (targetMod && targetMod !== mod && knownModules.has(targetMod)) {
+        flowSet.add(`${mod}->${targetMod}`);
+      }
+    }
+    for (const m of text.matchAll(rustImportRe)) {
+      const seg = m[1];
+      if (!seg) continue;
+      const cand = `src/${seg}`;
+      if (cand !== mod && knownModules.has(cand)) {
+        flowSet.add(`${mod}->${cand}`);
+      }
+    }
+  }
+
+  const classifyRole = (ms) => {
+    if (ms.ext.has('ci') && ms.ext.size === 1 && ms.int.size === 0) return 'pipeline';
+    if (ms.bridges > 0) return 'gateway';
+    if (ms.ext.size > 0) return 'interface';
+    if (ms.int.has('sql') || ms.int.has('fs') || ms.int.has('serde')) return 'persistence';
+    if (ms.int.has('auth') || ms.int.has('crypto')) return 'security';
+    if (ms.int.has('proc') || ms.int.has('ai') || ms.int.has('env')) return 'runtime';
+    if (ms.boundaryFiles > 0) return 'service';
+    return 'core';
+  };
+
+  const sortedMods = [...modStats.values()]
+    .sort((a, b) => (b.bridges - a.bridges) || (b.boundaryFiles - a.boundaryFiles) || (b.files - a.files))
+    .slice(0, Math.max(1, Number(maxModules) || 16));
+
+  const modules = sortedMods.map((ms) => `${ms.name}:${classifyRole(ms)}(${ms.files}f,${ms.bridges}b)`);
+  const flows = [...flowSet].slice(0, Math.max(1, Number(maxFlows) || 24));
+
+  return {
+    fileCount: files.length,
+    moduleCount: modStats.size,
+    boundaryFileCount,
+    bridgeCount: totalBridges,
+    flowCount: flowSet.size,
+    modules,
+    flows,
+  };
+}
+
 function flattenBoundaries(b = {}) {
   const ext = (b && b.external) || {};
   const int = (b && b.internal) || {};
@@ -251,6 +391,50 @@ function sanitizeList(list, maxItems = 24) {
   return out;
 }
 
+function sanitizeArchitecture(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const toInt = (v) => Math.max(0, Math.floor(Number(v) || 0));
+  const modRe = /^([\w.@+\/()-]+):(gateway|interface|service|persistence|security|runtime|pipeline|core)\((\d+)f,(\d+)b\)$/;
+  const flowRe = /^([\w.@+\/()-]+)->([\w.@+\/()-]+)$/;
+
+  const modules = [];
+  if (Array.isArray(raw.modules)) {
+    for (const item of raw.modules) {
+      const s = String(item || '').trim();
+      if (!s || SENSITIVE_TEXT.test(s)) { SENSITIVE_TEXT.lastIndex = 0; continue; }
+      SENSITIVE_TEXT.lastIndex = 0;
+      const m = modRe.exec(s);
+      if (!m) continue;
+      const modName = m[1];
+      if (modName.startsWith('/') || modName.startsWith('..') || /^(?:Users|home|private|var|tmp|etc)\//.test(modName)) continue;
+      if (!modules.includes(s) && modules.length < 24) modules.push(s);
+    }
+  }
+
+  const flows = [];
+  if (Array.isArray(raw.flows)) {
+    for (const item of raw.flows) {
+      const s = String(item || '').trim();
+      if (!s || SENSITIVE_TEXT.test(s)) { SENSITIVE_TEXT.lastIndex = 0; continue; }
+      SENSITIVE_TEXT.lastIndex = 0;
+      const m = flowRe.exec(s);
+      if (!m) continue;
+      if (m[1].startsWith('/') || m[2].startsWith('/') || m[1].startsWith('..') || m[2].startsWith('..')) continue;
+      if (!flows.includes(s) && flows.length < 24) flows.push(s);
+    }
+  }
+
+  return {
+    fileCount: toInt(raw.fileCount),
+    moduleCount: toInt(raw.moduleCount) || modules.length,
+    boundaryFileCount: toInt(raw.boundaryFileCount),
+    bridgeCount: toInt(raw.bridgeCount),
+    flowCount: toInt(raw.flowCount) || flows.length,
+    modules,
+    flows,
+  };
+}
+
 // Censors and normalizes a .neckbeard.json object so no secrets, URLs, hostnames, IPs, or absolute paths can be stored.
 function sanitizeProjectConfig(cfg = {}) {
   const b = (cfg && cfg.boundaries) || {};
@@ -275,6 +459,10 @@ function sanitizeProjectConfig(cfg = {}) {
       ai: sanitizeList(int.ai),
     },
   };
+  const arch = sanitizeArchitecture(cfg.architecture);
+  if (arch && (arch.modules.length > 0 || arch.flows.length > 0 || arch.fileCount > 0)) {
+    out.architecture = arch;
+  }
   return out;
 }
 
@@ -410,11 +598,16 @@ function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env)
   }
   const candidateBounds = patch.boundaries || existing.boundaries;
   const resolvedBounds = flattenBoundaries(candidateBounds).length > 0 ? candidateBounds : buildBoundaryMap(root);
+  const candidateArch = patch.architecture || existing.architecture;
+  const resolvedArch = (candidateArch && Array.isArray(candidateArch.modules) && candidateArch.modules.length > 0)
+    ? candidateArch
+    : buildArchitectureMap(root);
   const merged = sanitizeProjectConfig({
     shared: patch.shared !== undefined ? patch.shared : existing.shared,
     load: patch.load !== undefined ? patch.load : existing.load,
     boundaryLoad: nextBoundaryLoad,
     boundaries: resolvedBounds,
+    architecture: resolvedArch,
   });
 
   const localFile = localProjectFile(root, env);
@@ -459,8 +652,11 @@ function ensureFreshBoundaryMap(root = process.cwd(), env = process.env, maxAgeM
       }
     }
   }
-  if (needsRefresh) {
-    return writeProjectConfig(root, { boundaries: buildBoundaryMap(root) }, env);
+  if (needsRefresh || !cfg.architecture || !Array.isArray(cfg.architecture.modules) || cfg.architecture.modules.length === 0) {
+    return writeProjectConfig(root, {
+      boundaries: buildBoundaryMap(root),
+      architecture: buildArchitectureMap(root),
+    }, env);
   }
   return cfg;
 }
@@ -496,6 +692,13 @@ function formatProjectContext(root = process.cwd(), env = process.env) {
   }
   if (extLine) lines.push(`Trust Map [ext] ${extLine}`);
   if (intLine) lines.push(`Trust Map [int] ${intLine}`);
+  const arch = (cfg && cfg.architecture && Array.isArray(cfg.architecture.modules) && cfg.architecture.modules.length > 0)
+    ? cfg.architecture
+    : buildArchitectureMap(root);
+  if (arch && arch.modules && arch.modules.length > 0) {
+    const flowPart = arch.flows && arch.flows.length > 0 ? ` | flows:${arch.flows.slice(0, 4).join(',')}` : '';
+    lines.push(`Arch Map [${arch.moduleCount} mods · ${arch.bridgeCount} bridges] ${arch.modules.slice(0, 4).join(',')}${flowPart}`);
+  }
 
   if (cfg && cfg.boundaries && flattenBoundaries(cfg.boundaries).length > 0) {
     const drift = diffBoundaryMap(cfg.boundaries, liveMap);
@@ -509,11 +712,13 @@ function formatProjectContext(root = process.cwd(), env = process.env) {
 module.exports = {
   buildSurface,
   buildBoundaryMap,
+  buildArchitectureMap,
   flattenBoundaries,
   diffBoundaryMap,
   detectBoundaryDrift,
   sanitizeLoad,
   sanitizeBoundaryLoad,
+  sanitizeArchitecture,
   sanitizeProjectConfig,
   checkNeckbeardJson,
   parseLoadMetrics,
@@ -526,6 +731,7 @@ module.exports = {
   sharedProjectFile,
   ALLOWED_SINKS,
   ALLOWED_LOAD_KEYS,
+  ALLOWED_ARCH_ROLES,
   BOUNDARY_DETECTORS,
   CATEGORIES,
 };
@@ -535,7 +741,8 @@ if (require.main === module) {
   if (args.includes('--map')) {
     const targetDir = args.find((a) => !a.startsWith('-')) || process.cwd();
     const boundaries = buildBoundaryMap(targetDir);
-    writeProjectConfig(targetDir, { boundaries });
+    const architecture = buildArchitectureMap(targetDir);
+    writeProjectConfig(targetDir, { boundaries, architecture });
     process.stdout.write(formatProjectContext(targetDir) + '\n');
   } else {
     process.stdout.write(buildSurface(args[0] || process.cwd()) + '\n');

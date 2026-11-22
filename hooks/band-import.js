@@ -12,8 +12,47 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { claudeDir, bandDir, configBase, readGuardStats } = require('./lib');
-const { hasVibes, readVibesTelemetry } = require('./vibes');
+const { hasVibes, readVibesTelemetry, extractCleanTextSummary } = require('./vibes');
 const { buildBoundaryMap, detectBoundaryDrift, readProjectConfig } = require('./surface');
+
+const STALE_TITLE_RE = /^(?:#\s*(?:Context|Instructions|Overview|Task|Tasks|Prior Conversation)|Interactive coding session$)/i;
+
+function extractSessionTaskTitle(sessionTitle, firstUserText, lastAssistantText) {
+  if (sessionTitle && !STALE_TITLE_RE.test(sessionTitle)) return sessionTitle;
+  const rawUser = String(firstUserText || '').trim();
+  const playbookMatch = /Process tasks from this document:\s+([^\s\n]+)/i.exec(rawUser);
+  const playbookDoc = playbookMatch ? path.basename(playbookMatch[1], '.md') : '';
+
+  let assistantSynopsis = '';
+  if (lastAssistantText) {
+    const firstLine = String(lastAssistantText)
+      .replace(/^[\s*#`-]+/, '')
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.length > 8 && !/^(?:What changed|Summary|Overview|Synopsis):?$/i.test(l));
+    if (firstLine) {
+      assistantSynopsis = firstLine.replace(/`/g, '').split(/\.\s+/)[0].replace(/\.$/, '').slice(0, 72);
+    }
+  }
+
+  if (playbookDoc && assistantSynopsis) {
+    return `[${playbookDoc}] ${assistantSynopsis}`.slice(0, 84);
+  }
+  if (playbookDoc) {
+    const dirName = path.basename(path.dirname(playbookMatch[1]));
+    return `Playbook: ${playbookDoc}${dirName && dirName !== 'playbooks' ? ` (${dirName})` : ''}`.slice(0, 84);
+  }
+  if (rawUser && !STALE_TITLE_RE.test(rawUser.split('\n')[0].trim())) {
+    return extractCleanTextSummary(rawUser).slice(0, 76);
+  }
+  if (assistantSynopsis) {
+    return assistantSynopsis.slice(0, 76);
+  }
+  if (rawUser) {
+    return extractCleanTextSummary(rawUser).slice(0, 76) || 'Interactive coding session';
+  }
+  return 'Interactive coding session';
+}
 
 const MODEL_RATES_PER_M = {
   'claude-opus-5-5': { in: 4, out: 20, cacheRead: 0.2, cacheWrite: 5 },
@@ -76,6 +115,7 @@ function parseJsonlSessionFile(filePath) {
   let workspaceCwd = '';
   let sessionTitle = '';
   let firstPrompt = '';
+  let lastAssistantText = '';
   let explicitCostUsd = null;
   let startedAtMs = null;
   let lastTimestampMs = null;
@@ -122,14 +162,20 @@ function parseJsonlSessionFile(filePath) {
           ? ((msgContent.find((b) => b && b.type === 'text') || {}).text || '')
           : '';
       if (textPart && !firstPrompt && !textPart.trim().startsWith('<') && !textPart.trim().startsWith('/')) {
-        firstPrompt = textPart.trim().split('\n')[0].slice(0, 64);
+        firstPrompt = textPart.trim().slice(0, 4096);
       }
       const isToolResult = Array.isArray(msgContent) && msgContent.some((b) => b && b.type === 'tool_result');
       if (!isToolResult) turnCount++;
     }
 
     if (entry.type === 'assistant' && entry.message && entry.message.model && entry.message.model !== '<synthetic>') {
-      const { id, model, usage } = entry.message;
+      const { id, model, usage, content: aContent } = entry.message;
+      if (Array.isArray(aContent)) {
+        const txtBlock = aContent.find((b) => b && b.type === 'text' && typeof b.text === 'string' && b.text.trim());
+        if (txtBlock) lastAssistantText = txtBlock.text.trim().slice(0, 512);
+      } else if (typeof aContent === 'string' && aContent.trim()) {
+        lastAssistantText = aContent.trim().slice(0, 512);
+      }
       modelCounts[model] = (modelCounts[model] || 0) + 1;
       if (id && usage && !seenMsgIds.has(id)) {
         seenMsgIds.add(id);
@@ -151,7 +197,7 @@ function parseJsonlSessionFile(filePath) {
   return {
     workspaceCwd,
     startedAtMs,
-    taskTitle: sessionTitle || firstPrompt || 'Interactive coding session',
+    taskTitle: extractSessionTaskTitle(sessionTitle, firstPrompt, lastAssistantText),
     modelId: primaryModel,
     turnCount,
     activeDurationMs,
@@ -162,6 +208,7 @@ function parseJsonlSessionFile(filePath) {
 
 function readExistingJsonlRecords(jsonlPath) {
   const byId = new Map();
+  const sessionKeyToRecordId = new Map();
   try {
     if (!fs.existsSync(jsonlPath)) return byId;
     for (const line of fs.readFileSync(jsonlPath, 'utf8').split('\n')) {
@@ -169,7 +216,25 @@ function readExistingJsonlRecords(jsonlPath) {
       if (!t.startsWith('{')) continue;
       try {
         const rec = JSON.parse(t);
-        if (rec && rec.recordId) byId.set(rec.recordId, rec);
+        if (!rec || !rec.recordId) continue;
+        if (rec.sessionId && sessionKeyToRecordId.has(rec.sessionId)) {
+          const prevId = sessionKeyToRecordId.get(rec.sessionId);
+          const prev = byId.get(prevId);
+          if (prev) {
+            if (STALE_TITLE_RE.test(String(prev.taskTitle || '').trim()) && !STALE_TITLE_RE.test(String(rec.taskTitle || '').trim())) {
+              prev.taskTitle = rec.taskTitle;
+            }
+            prev.reusePercent = prev.reusePercent ?? rec.reusePercent;
+            prev.reusedSymbolCount = Math.max(prev.reusedSymbolCount || 0, rec.reusedSymbolCount || 0);
+            prev.newSymbolCount = Math.max(prev.newSymbolCount || 0, rec.newSymbolCount || 0);
+            prev.linesInserted = Math.max(prev.linesInserted || 0, rec.linesInserted || 0);
+            prev.linesDeleted = Math.max(prev.linesDeleted || 0, rec.linesDeleted || 0);
+            prev.guardBlockCount = Math.max(prev.guardBlockCount || 0, rec.guardBlockCount || 0);
+            continue;
+          }
+        }
+        if (rec.sessionId) sessionKeyToRecordId.set(rec.sessionId, rec.recordId);
+        byId.set(rec.recordId, rec);
       } catch {}
     }
   } catch {}
@@ -1065,7 +1130,21 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
       }
 
       const recordId = `${sessionId.slice(0, 8)}-${parsed.startedAtMs}`;
-      if (recordsById.has(recordId)) continue;
+      let existingRec = recordsById.get(recordId);
+      if (!existingRec) {
+        for (const candidate of recordsById.values()) {
+          if (candidate && candidate.sessionId === sessionId) {
+            existingRec = candidate;
+            break;
+          }
+        }
+      }
+      if (existingRec) {
+        if (STALE_TITLE_RE.test(String(existingRec.taskTitle || '').trim()) && parsed.taskTitle) {
+          existingRec.taskTitle = parsed.taskTitle;
+        }
+        continue;
+      }
 
       let prismRisk = null;
       let secFound = 0;
@@ -1115,7 +1194,12 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
     }
   }
 
-  const allRecords = [...recordsById.values()];
+  const allRecords = [...recordsById.values()].map((r) => {
+    if (r && STALE_TITLE_RE.test(String(r.taskTitle || '').trim())) {
+      return { ...r, taskTitle: `Automated Playbook Session (${r.projectName || 'workspace'})` };
+    }
+    return r;
+  });
   fs.writeFileSync(jsonlPath, allRecords.map((r) => JSON.stringify(r)).join('\n') + (allRecords.length ? '\n' : ''));
 
   // Populate per-workspace boundary maps, load configs, and VIBES telemetry for all discovered project directories
@@ -1219,6 +1303,7 @@ if (require.main === module) {
 module.exports = {
   MODEL_RATES_PER_M,
   computeMessageCostUsd,
+  extractSessionTaskTitle,
   parseJsonlSessionFile,
   generateCommandCenterHtml,
   formatSummary,

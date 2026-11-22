@@ -311,6 +311,24 @@ export function serializeSessionRecord(state: NeckbeardHudState, startedAtMs: nu
   }
 }
 
+export function extractPromptTaskTitle(rawPrompt: string): string {
+  const clean = String(rawPrompt || '').trim()
+  if (!clean) return 'Interactive session'
+  const pbMatch = /Process tasks from this document:\s+([^\s\n]+)/i.exec(clean)
+  if (pbMatch && pbMatch[1]) {
+    const base = pbMatch[1].replace(/\\/g, '/').split('/').pop()?.replace(/\.md$/i, '') ?? ''
+    if (base) return `Playbook: ${base}`.slice(0, 64)
+  }
+  for (const rawLine of clean.split('\n')) {
+    const line = rawLine.trim()
+    if (!line || /^---+$/.test(line)) continue
+    if (/^#{1,6}\s*(?:Context|Instructions|Overview|Task|Tasks|Prior Conversation|Your Role|Rules|Guidelines)\b/i.test(line)) continue
+    if (/^(?:Your name is\b|-\s*\*\*(?:Agent Path|Project|Playbook|Mode):)/i.test(line)) continue
+    return line.replace(/^#{1,6}\s+/, '').slice(0, 64)
+  }
+  return (clean.split('\n')[0] ?? 'Interactive session').slice(0, 64)
+}
+
 export function upsertJsonlLedger(existingJsonl: string, record: TelemetrySessionRecord): string {
   const keptLines = existingJsonl
     .split('\n')
@@ -318,8 +336,10 @@ export function upsertJsonlLedger(existingJsonl: string, record: TelemetrySessio
     .filter((l) => {
       if (!l.startsWith('{')) return false
       try {
-        const parsed = JSON.parse(l) as { recordId?: string }
-        return parsed.recordId !== record.recordId
+        const parsed = JSON.parse(l) as { recordId?: string; sessionId?: string }
+        if (parsed.recordId === record.recordId) return false
+        if (record.sessionId && parsed.sessionId === record.sessionId) return false
+        return true
       } catch {
         return false
       }

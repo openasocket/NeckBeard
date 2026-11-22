@@ -20,8 +20,8 @@ const {
   writeProjectConfig,
   formatProjectContext,
 } = require('../hooks/surface');
-const { readVibesTelemetry, formatVibesContext } = require('../hooks/vibes');
-const { formatSummary } = require('../hooks/band-import');
+const { readVibesTelemetry, formatVibesContext, extractCleanTextSummary } = require('../hooks/vibes');
+const { formatSummary, extractSessionTaskTitle } = require('../hooks/band-import');
 
 const HOOKS = path.join(__dirname, '..', 'hooks');
 // Fake secrets are assembled at runtime so this file never holds one verbatim.
@@ -275,14 +275,48 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
   fs.mkdirSync(path.join(dir, '.ai-audit'), { recursive: true });
   fs.writeFileSync(
     path.join(dir, '.ai-audit', 'manifest.json'),
-    JSON.stringify({ decisions: [{ id: 'DEC-1' }, { id: 'DEC-2' }] })
+    JSON.stringify({
+      decisions: [{ id: 'DEC-1' }],
+      entries: [
+        {
+          hash: 'sha256:aaa111222333',
+          type: 'decision',
+          decision_point: 'Verify DSSE Ed25519 trust cache rotation',
+          selected: 'Retire rotated keys immediately',
+          rationale: 'Prevents stale key verification acceptance',
+          confidence: 0.94,
+          created_at: '2026-11-21T19:58:00Z',
+        },
+        {
+          hash: 'sha256:bbb444555666',
+          type: 'reasoning',
+          reasoning_text: 'Checking provider key cache invalidation on key rotate',
+          reasoning_model: 'claude-opus-4-7',
+          created_at: '2026-11-21T19:59:00Z',
+        },
+      ],
+    })
   );
   fs.writeFileSync(
     path.join(dir, '.ai-audit', 'annotations.jsonl'),
     [
       JSON.stringify({ session_id: 'sess-12345678', timestamp: '2026-11-21T20:00:00Z', model: 'claude-opus-5-5', prompt: 'Harden auth endpoint', lines_added: 18, lines_removed: 42, risk_score: 0.72, verified: true, tokens_total: 4200, cost_usd: 0.14 }),
+      JSON.stringify({ id: 'ann-fn-1', type: 'function', file_path: 'src/trust.rs', function_name: 'rotate_key', assurance_level: 'high', reasoning_hash: 'sha256:bbb444555666', created_at: '2026-11-21T20:01:00Z' }),
       JSON.stringify({ session_id: 'sess-12345678', timestamp: '2026-11-21T20:02:00Z', type: 'incident', ioc_id: 'TRACE-01', status: 'resolved' }),
     ].join('\n') + '\n'
+  );
+
+  // Verify Maestro Auto Run "# Context" prompt extraction upgrades to [Playbook] + Synopsis
+  const maestroPrompt = [
+    '# Context',
+    'Project: /workspace/VibeCheck',
+    'Playbook: Security Audit',
+    'Process tasks from this document: /workspace/VibeCheck/.maestro/playbooks/AUDIT-R05-Trust.md',
+  ].join('\n');
+  assert.strictEqual(extractCleanTextSummary(maestroPrompt), 'Playbook: AUDIT-R05-Trust');
+  assert.strictEqual(
+    extractSessionTaskTitle('# Context', maestroPrompt, '`key rotate` now retires the old key in the provider key cache. Completed task 1.'),
+    '[AUDIT-R05-Trust] key rotate now retires the old key in the provider key cache'
   );
 
   // Trigger one guard block so guard-stats.json records a security block
@@ -292,21 +326,24 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
   assert.strictEqual(vibes.present, true);
   assert.strictEqual(vibes.maxPrismRisk, 0.72);
   assert.strictEqual(vibes.highRiskCount, 1);
-  assert.strictEqual(vibes.verifiedCount, 1);
+  assert.strictEqual(vibes.verifiedCount, 2);
   assert.strictEqual(vibes.prismBuckets.high, 1);
   assert.strictEqual(vibes.traceIncidents, 1);
   assert.strictEqual(vibes.traceResolved, 1);
   assert.strictEqual(vibes.decisions, 2);
   assert.strictEqual(vibes.decisionRecords.length, 2);
+  assert.match(vibes.decisionRecords[0].title, /Verify DSSE Ed25519 trust cache rotation → Retire rotated keys immediately/);
+  assert.strictEqual(vibes.manifestCounts.reasoning, 1);
+  assert.ok(vibes.recentAnnotations.some((a) => a.file === 'src/trust.rs :: rotate_key()'));
   assert.strictEqual(vibes.incidentRecords.length, 1);
-  assert.strictEqual(vibes.linesAdded, 18);
+  assert.strictEqual(vibes.linesAdded, 19);
   assert.strictEqual(vibes.linesRemoved, 42);
   assert.match(formatVibesContext(dir), /PRISM max risk 0\.72/);
 
   const summary = formatSummary(dir, env);
   assert.match(summary, /VIBES \(\.ai-audit\) : active/);
   assert.match(summary, /1 PreToolUse blocks/);
-  assert.match(summary, /\+18 \/ -42 lines/);
+  assert.match(summary, /\+19 \/ -42 lines/);
   const boardFile = path.join(cfgHome, 'neckbeard', 'telemetry', 'dashboard.html');
   assert.ok(fs.existsSync(boardFile));
   const boardHtml = fs.readFileSync(boardFile, 'utf8');

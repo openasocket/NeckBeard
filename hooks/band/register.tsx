@@ -15,6 +15,7 @@ import {
   computeReusePercentage,
   detectBoundarySinks,
   evaluateTestOutput,
+  extractPromptTaskTitle,
   extractSymbols,
   formatDurationMs,
   formatTestStatusBadge,
@@ -343,8 +344,8 @@ export const register: Register = (on) => {
   on('prompt.submit', async ($, evt, next) => {
     const clean = evt.text.trim()
     if (evt.origin.kind !== 'plugin' && clean !== '' && !clean.startsWith('/')) {
-      const firstLine = (clean.split('\n')[0] ?? '').slice(0, 64)
-      await update($, hudAtom, (s) => (s.taskTitle === '' ? { ...s, taskTitle: firstLine } : s))
+      const title = extractPromptTaskTitle(clean)
+      await update($, hudAtom, (s) => (s.taskTitle === '' ? { ...s, taskTitle: title } : s))
     }
     return next(evt)
   }).catch(($, evt, next) => next(evt))

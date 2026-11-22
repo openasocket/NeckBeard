@@ -1,17 +1,26 @@
 'use strict';
 // VIBES Protocol (.ai-audit/) telemetry reader & 5-pillar visualizer data extractor.
-// Supports the complete VIBES v1.0/v1.1, VERIFY v1.0, PRISM v1.0, EVOLVE v1.0, and TRACE v1.0 schemas:
-// - manifest.json: both `entries` content-addressed hash map (environment, reasoning, command, prompt, decision)
-//   and top-level `decisions` / `sessions`.
-// - annotations.jsonl: `type: "line" | "session" | "decision" | "incident"`, `action: "create" | "modify" | "delete" | "attest" | "verify" | "block" | "analyze" | "proxy"`,
-//   `line_start` / `line_end` range attribution, `assurance_level` ("high" | "medium" | "low"),
-//   `environment_hash` / `command_hash` / `reasoning_hash` / `prompt_hash` / `commit_hash` linkage,
-//   and PRISM `risk_score`, `risk_band`, and `risk_factors`.
+// Supports the complete canonical VIBES v1.0/v1.1, VERIFY v1.0, PRISM v1.0, EVOLVE v1.0, and TRACE v1.0 schemas
+// across VibeCheck, ClaudeCode-VIBES, Codex-VIBES, AntigravityCLI-VIBES, and VibeTrace:
+// - manifest.json `entries` content-addressed hash map:
+//   * environment: tool_name, tool_version, model_name, model_version, model_parameters, tool_extensions, created_at
+//   * prompt: prompt_text, prompt_type, prompt_context_files, created_at
+//   * command: command_text, command_type, command_exit_code, command_output_summary, working_directory, created_at
+//   * reasoning: reasoning_text, reasoning_token_count, reasoning_model, compressed, external, blob_path, created_at
+//   * decision: decision_point, options, selected, rationale, confidence, created_at
+// - annotations.jsonl records:
+//   * line: file_path, line_start, line_end, action, assurance_level, *_hash, risk_score, risk_band, risk_factors
+//   * function: file_path, function_name, function_signature, action, assurance_level, *_hash, risk_score
+//   * session: session_id, event, timestamp, environment_hash, assurance_level, description, agent_name, agent_type
+//   * delegation: parent_session_id, child_session_id, task_description, delegated_files, delegation_type
+//   * edge: edge_type, source_ref, source_type, target_ref, target_type, session_id
+//   * incident: incident_id, ioc_id, rule_id, severity, status, quarantined, risk_score, risk_factors
 
 const fs = require('fs');
 const path = require('path');
 
 const MAX_READ_BYTES = 16 * 1024 * 1024;
+const GENERIC_HEADING_RE = /^(?:#{1,6}\s*(?:Context|Instructions|Overview|Task|Tasks|Prior Conversation|Context Summarization|Context Transfer|Background|System|CRITICAL|Structured Output|YAML Front Matter|Folder Organization).*|---|\*\*\*)$/i;
 
 function hasVibes(root = process.cwd()) {
   const dir = path.join(root, '.ai-audit');
@@ -88,6 +97,26 @@ function countRangeLines(ranges) {
   return total;
 }
 
+function extractCleanTextSummary(rawText) {
+  if (!rawText || typeof rawText !== 'string') return '';
+  const trimmed = rawText.trim();
+  const playbookMatch = /Process tasks from this document:\s+([^\s\n]+)/i.exec(trimmed);
+  if (playbookMatch) {
+    const docBase = path.basename(playbookMatch[1], '.md');
+    const dirBase = path.basename(path.dirname(playbookMatch[1]));
+    return `Playbook: ${docBase}${dirBase && dirBase !== 'playbooks' ? ` (${dirBase})` : ''}`.slice(0, 76);
+  }
+  const lines = trimmed.split('\n');
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/[*#`]/g, '').trim();
+    if (!line || line.length < 4) continue;
+    if (GENERIC_HEADING_RE.test(rawLine.trim())) continue;
+    if (/^Your name is\b/i.test(line) || /^- (?:Agent Path|Git Branch|Auto Run Folder|Loop Iteration|Working Folder):/i.test(rawLine.trim())) continue;
+    return line.slice(0, 76);
+  }
+  return lines[0].replace(/[*#`]/g, '').trim().slice(0, 76);
+}
+
 // Extracts project-level, per-session, and 5-pillar visualization telemetry from .ai-audit/.
 function readVibesTelemetry(root = process.cwd()) {
   if (!hasVibes(root)) return null;
@@ -111,36 +140,89 @@ function readVibesTelemetry(root = process.cwd()) {
   const manifestCounts = { environment: 0, reasoning: 0, command: 0, prompt: 0, decision: 0, total: 0 };
   const envModels = new Map();
   const manifestSummaries = new Map();
+  const manifestInspectorRows = [];
   const decisionRecords = [];
   const incidentRecords = [];
   const recentAnnotations = [];
 
-  // Parse content-addressed manifest.entries hash table (VIBES v1.0 / v1.1 standard)
+  // Parse content-addressed manifest.entries hash table (canonical VIBES v1.0 / v1.1 schema)
   if (manifest.entries && typeof manifest.entries === 'object') {
     for (const [hash, entry] of Object.entries(manifest.entries)) {
       if (!entry || typeof entry !== 'object') continue;
       manifestCounts.total += 1;
       const eType = String(entry.type || '');
       if (eType in manifestCounts) manifestCounts[eType] += 1;
+      const createdStamp = String(entry.created_at || '').replace('T', ' ').slice(0, 19);
 
       if (eType === 'environment') {
         const modelLabel = (entry.model_name && entry.model_name !== 'unknown' ? entry.model_name : '') ||
           entry.tool_name || '';
         if (modelLabel) envModels.set(hash, modelLabel);
-      } else if (eType === 'reasoning' && typeof entry.reasoning_text === 'string') {
-        const cleanLine = entry.reasoning_text.replace(/[*#`]/g, '').trim().split('\n').find((l) => l.trim().length > 4);
-        if (cleanLine) manifestSummaries.set(hash, cleanLine.trim().slice(0, 76));
+      } else if (eType === 'prompt') {
+        const promptSum = extractCleanTextSummary(entry.prompt_text || '');
+        if (promptSum) {
+          manifestSummaries.set(hash, promptSum);
+          const ctxFiles = Array.isArray(entry.prompt_context_files) && entry.prompt_context_files.length
+            ? entry.prompt_context_files[0]
+            : '[prompt]';
+          manifestInspectorRows.push({
+            sessionId: hash.slice(0, 10),
+            timestamp: createdStamp,
+            model: String(entry.prompt_type || 'prompt'),
+            file: String(ctxFiles),
+            linesAdded: 0,
+            linesRemoved: 0,
+            riskScore: null,
+            verified: true,
+            summary: promptSum,
+          });
+        }
+      } else if (eType === 'reasoning') {
+        const reasonSum = extractCleanTextSummary(entry.reasoning_text || '');
+        if (reasonSum) {
+          manifestSummaries.set(hash, reasonSum);
+          manifestInspectorRows.push({
+            sessionId: hash.slice(0, 10),
+            timestamp: createdStamp,
+            model: String(entry.reasoning_model || 'reasoning'),
+            file: entry.blob_path ? `blob:${path.basename(entry.blob_path).slice(0, 12)}` : '[reasoning]',
+            linesAdded: Number(entry.reasoning_token_count || 0),
+            linesRemoved: 0,
+            riskScore: null,
+            verified: true,
+            summary: `Reasoning: ${reasonSum}`,
+          });
+        }
       } else if (eType === 'command') {
         const cmdSummary = entry.command_output_summary || entry.command_text || entry.command_type || '';
-        if (cmdSummary) manifestSummaries.set(hash, String(cmdSummary).trim().split('\n')[0].slice(0, 76));
+        const cleanCmd = extractCleanTextSummary(String(cmdSummary));
+        if (cleanCmd) {
+          manifestSummaries.set(hash, cleanCmd);
+          manifestInspectorRows.push({
+            sessionId: hash.slice(0, 10),
+            timestamp: createdStamp,
+            model: String(entry.command_type || 'command'),
+            file: `[cmd exit:${entry.command_exit_code ?? 0}]`,
+            linesAdded: 0,
+            linesRemoved: 0,
+            riskScore: null,
+            verified: entry.command_exit_code === 0 || entry.command_exit_code == null,
+            summary: cleanCmd,
+          });
+        }
       } else if (eType === 'decision') {
         decisions += 1;
         if (decisionRecords.length < 15) {
+          // Canonical VibeCheck decision fields: decision_point, options, selected, rationale, confidence
+          const dp = entry.decision_point || entry.title || entry.summary || '';
+          const sel = entry.selected ? ` → ${entry.selected}` : '';
+          const rat = entry.rationale ? ` (${entry.rationale})` : '';
+          const fullTitle = `${dp}${sel}${rat}`.trim() || 'Manifest decision record';
           decisionRecords.push({
             id: hash.slice(0, 10),
-            title: String(entry.title || entry.summary || entry.rationale || entry.decision_text || 'Manifest decision record').slice(0, 96),
-            status: String(entry.status || 'attested'),
-            timestamp: String(entry.created_at || ''),
+            title: fullTitle.slice(0, 110),
+            status: String(entry.confidence || entry.status || 'attested'),
+            timestamp: createdStamp,
           });
         }
       }
@@ -150,10 +232,13 @@ function readVibesTelemetry(root = process.cwd()) {
   if (Array.isArray(manifest.decisions)) {
     for (const d of manifest.decisions.slice(0, 15)) {
       if (d && typeof d === 'object') {
+        const dp = d.decision_point || d.title || d.summary || '';
+        const sel = d.selected ? ` → ${d.selected}` : '';
+        const rat = d.rationale && !dp.includes(d.rationale) ? ` (${d.rationale})` : '';
         decisionRecords.push({
-          id: String(d.id || d.decision_id || `DEC-${decisionRecords.length + 1}`),
-          title: String(d.title || d.summary || d.rationale || 'Recorded architectural decision').slice(0, 96),
-          status: String(d.status || 'accepted'),
+          id: String(d.id || d.decision_id || d.hash || `DEC-${decisionRecords.length + 1}`).slice(0, 12),
+          title: (`${dp}${sel}${rat}`.trim() || 'Recorded architectural decision').slice(0, 110),
+          status: String(d.confidence || d.status || 'accepted'),
           timestamp: String(d.timestamp || d.created_at || ''),
         });
       }
@@ -199,7 +284,7 @@ function readVibesTelemetry(root = process.cwd()) {
       const ts = meta.started_at ? Date.parse(meta.started_at) : (meta.timestamp ? Date.parse(meta.timestamp) : NaN);
       const s = ensureSession(sid, Number.isFinite(ts) ? ts : Date.now(), meta.model || meta.agent_model || '');
       if (meta.title || meta.summary || meta.prompt) {
-        s.name = String(meta.title || meta.summary || meta.prompt).split('\n')[0].slice(0, 60);
+        s.name = extractCleanTextSummary(String(meta.title || meta.summary || meta.prompt)).slice(0, 60);
       }
       if (typeof meta.turns === 'number') s.turns = Math.max(s.turns, meta.turns);
       if (typeof meta.tokens_total === 'number') s.tokens = Math.max(s.tokens, meta.tokens_total);
@@ -211,20 +296,28 @@ function readVibesTelemetry(root = process.cwd()) {
     if (!a || typeof a !== 'object') continue;
     const tsRaw = a.timestamp || a.created_at || a.started_at;
     const ts = tsRaw ? Date.parse(tsRaw) : NaN;
-    const sid = a.session_id || a.sessionId || manifest.session_id || 'vibes-default';
+    const sid = a.session_id || a.sessionId || a.parent_session_id || manifest.session_id || 'vibes-default';
     const resolvedEnvModel = (a.environment_hash && envModels.get(a.environment_hash)) || '';
     const model = (a.model && a.model !== 'unknown' ? a.model : '') ||
       a.agent_model || (a.agent && a.agent.model) || resolvedEnvModel || a.agent_name || '';
     const s = ensureSession(sid, Number.isFinite(ts) ? ts : undefined, model);
     s.turns += 1;
 
-    const linkedSummary = (a.reasoning_hash && manifestSummaries.get(a.reasoning_hash)) ||
-      (a.command_hash && manifestSummaries.get(a.command_hash)) || '';
-    const summaryText = String(
-      a.prompt || a.intent || a.summary || a.description || linkedSummary ||
-      (a.action && a.file_path ? `${a.action} ${a.file_path}` : a.action || a.type || '')
-    ).split('\n')[0].slice(0, 76);
-    if (!s.name && summaryText && !summaryText.endsWith('session ended')) {
+    const linkedPrompt = (a.prompt_hash && manifestSummaries.get(a.prompt_hash)) || '';
+    const linkedReason = (a.reasoning_hash && manifestSummaries.get(a.reasoning_hash)) || '';
+    const linkedCmd = (a.command_hash && manifestSummaries.get(a.command_hash)) || '';
+
+    const rawFile = a.file_path || a.file || a.path || '';
+    const fileLabel = rawFile
+      ? (a.function_name ? `${rawFile} :: ${a.function_name}()` : rawFile)
+      : '';
+
+    const summaryText = extractCleanTextSummary(
+      a.prompt || a.intent || a.summary || a.task_description || linkedPrompt || linkedReason || linkedCmd ||
+      (a.description && !String(a.description).endsWith('session ended') ? a.description : '') ||
+      (a.action && fileLabel ? `${a.action} ${fileLabel}` : a.action || a.type || '')
+    );
+    if (!s.name && summaryText && !/agent session/i.test(summaryText)) {
       s.name = summaryText.slice(0, 60);
     }
 
@@ -245,10 +338,9 @@ function readVibesTelemetry(root = process.cwd()) {
     );
     if (isVerified) verifiedCount += 1;
 
-    const file = a.file_path || a.file || a.path;
     const lineRangeCount = (a.line_start != null && a.line_end != null)
       ? Math.max(1, Number(a.line_end) - Number(a.line_start) + 1)
-      : 0;
+      : (a.type === 'function' ? 1 : 0);
 
     let added = (typeof a.lines_added === 'number' ? a.lines_added : 0) ||
       countRangeLines(a.created_lines || a.added_lines || (a.changes && a.changes.created)) +
@@ -284,16 +376,16 @@ function readVibesTelemetry(root = process.cwd()) {
       }
     }
 
-    if (file) {
-      filesTouched.add(file);
-      s.files.add(file);
-      const prev = fileStatsMap.get(file) || { file, annotations: 0, linesAdded: 0, linesRemoved: 0, maxRisk: 0, verified: true };
+    if (rawFile) {
+      filesTouched.add(rawFile);
+      s.files.add(rawFile);
+      const prev = fileStatsMap.get(rawFile) || { file: rawFile, annotations: 0, linesAdded: 0, linesRemoved: 0, maxRisk: 0, verified: true };
       prev.annotations += 1;
       prev.linesAdded += added;
       prev.linesRemoved += removed;
       if (risk !== null && Number.isFinite(risk) && risk > prev.maxRisk) prev.maxRisk = +risk.toFixed(2);
       prev.verified = prev.verified && isVerified;
-      fileStatsMap.set(file, prev);
+      fileStatsMap.set(rawFile, prev);
     }
 
     if (typeof a.tokens_total === 'number') s.tokens += a.tokens_total;
@@ -305,22 +397,24 @@ function readVibesTelemetry(root = process.cwd()) {
     }
     if (typeof a.cost_usd === 'number') s.costUsd = (s.costUsd || 0) + a.cost_usd;
 
-    if (a.type === 'decision' || a.record_type === 'decision' || a.decision_hash) {
+    if (a.type === 'decision' || a.record_type === 'decision' || a.decision_hash || a.type === 'delegation') {
       decisions += 1;
       if (decisionRecords.length < 15) {
+        const dp = a.decision_point || a.task_description || summaryText || 'Agent decision record';
+        const sel = a.selected ? ` → ${a.selected}` : '';
         decisionRecords.push({
-          id: String(a.id || a.decision_id || (a.decision_hash && a.decision_hash.slice(0, 10)) || `DEC-${decisions}`),
-          title: summaryText || 'Agent decision record',
-          status: String(a.status || (isVerified ? 'attested' : 'recorded')),
+          id: String(a.id || a.decision_id || (a.decision_hash && a.decision_hash.slice(0, 10)) || (a.type === 'delegation' ? 'DELEGATE' : `DEC-${decisions}`)),
+          title: `${dp}${sel}`.slice(0, 110),
+          status: String(a.confidence || a.status || (isVerified ? 'attested' : 'recorded')),
           timestamp: String(tsRaw || ''),
         });
       }
     }
 
-    if (a.type === 'incident' || a.record_type === 'incident' || a.ioc_id || a.trace_incident || a.action === 'block') {
+    if (a.type === 'incident' || a.record_type === 'incident' || a.ioc_id || a.trace_incident || a.action === 'block' || a.quarantined === true) {
       traceIncidents += 1;
       s.secFound += 1;
-      const isResolved = Boolean(a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed' || a.action === 'block');
+      const isResolved = Boolean(a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed' || a.action === 'block' || a.quarantined === true);
       if (isResolved) {
         traceResolved += 1;
         s.secFixed += 1;
@@ -338,12 +432,12 @@ function readVibesTelemetry(root = process.cwd()) {
       }
     }
 
-    if (file || risk !== null || a.type !== 'session') {
+    if (fileLabel || risk !== null || a.type !== 'session') {
       recentAnnotations.push({
         sessionId: String(sid).slice(0, 14),
         timestamp: String(tsRaw || '').replace('T', ' ').slice(0, 19),
         model: String(model || 'agent'),
-        file: String(file || (a.action ? `[${a.action}]` : '(session-level)')),
+        file: String(fileLabel || (a.action ? `[${a.action}]` : `[${a.type || 'turn'}]`)),
         linesAdded: added,
         linesRemoved: removed,
         riskScore: risk !== null && Number.isFinite(risk) ? +risk.toFixed(2) : null,
@@ -353,17 +447,22 @@ function readVibesTelemetry(root = process.cwd()) {
     }
   }
 
+  // If annotations.jsonl only had session start/end events (like VibeCheck), populate recentAnnotations from manifestInspectorRows
+  if (recentAnnotations.length === 0 && manifestInspectorRows.length > 0) {
+    recentAnnotations.push(...manifestInspectorRows.slice(-16));
+  }
+
   const incDirCount = countDirEntriesSafe(path.join(dir, 'incidents'));
   traceIncidents = Math.max(traceIncidents, incDirCount);
   const blobsCount = countDirEntriesSafe(path.join(dir, 'blobs')) || manifestCounts.total;
   const attestationsCount = countDirEntriesSafe(path.join(dir, 'attestations')) +
     countDirEntriesSafe(path.join(dir, 'provenance')) +
+    countDirEntriesSafe(path.join(dir, 'cosign')) +
     countDirEntriesSafe(path.join(dir, 'evidence')) ||
     assuranceBreakdown.high;
   const iocRulesCount = countDirEntriesSafe(path.join(dir, 'iocs.d'));
   const hasAuditDb = fs.existsSync(path.join(dir, 'audit.db')) || fs.existsSync(path.join(dir, 'wal'));
 
-  // Synthesize EVOLVE summary entries when manifest.entries contains reasoning/command provenance
   if (decisionRecords.length === 0 && manifestCounts.total > 0) {
     if (manifestCounts.reasoning > 0) {
       decisionRecords.push({
@@ -431,4 +530,4 @@ function formatVibesContext(root = process.cwd()) {
   return `VIBES (.ai-audit/): active · ${v.annotationsCount} annotations · PRISM max risk ${v.maxPrismRisk.toFixed(2)} (${v.highRiskCount} high) · TRACE incidents ${v.traceIncidents} (${v.traceResolved} resolved) · EVOLVE decisions ${v.decisions}`;
 }
 
-module.exports = { hasVibes, readVibesTelemetry, formatVibesContext };
+module.exports = { hasVibes, readVibesTelemetry, formatVibesContext, extractCleanTextSummary };

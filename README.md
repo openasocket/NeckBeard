@@ -12,12 +12,16 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.2.0-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.2.0">
-  <img src="https://img.shields.io/badge/dependencies-0-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="0 dependencies">
-  <img src="https://img.shields.io/badge/gates-Safe%20%C2%B7%20Fast%20%C2%B7%20Done-111714?style=flat-square&labelColor=0b0e0c&color=f59e0b" alt="Three gates: Safe, Fast, Done">
-  <a href="https://neckbeard.tech"><img src="assets/badge.svg" height="20" alt="NeckBeard Audited: Safe, Fast, Done"></a>
-  <a href="https://www.itsavibe.ai"><img src="https://img.shields.io/badge/VIBES-v1.1%20%C2%B7%20VERIFY%20%C2%B7%20PRISM%20%C2%B7%20TRACE-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="VIBES Protocol Compatible"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="MIT license"></a>
+  <a href="https://neckbeard.tech"><img src="assets/badge.svg" height="24" alt="NeckBeard: Minimal Code · Boundary Safe · Scales at Load"></a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/code-Minimal%20%26%20Reused%20(0%20Bloat)-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="Minimal & Reused Code">
+  <img src="https://img.shields.io/badge/security-Trust--Boundary%20Safe%20%26%20Live%20Secret%20Guard-111714?style=flat-square&labelColor=0b0e0c&color=38bdf8" alt="Trust-Boundary Safe & Live Secret Guard">
+  <img src="https://img.shields.io/badge/scale-Fast%20at%20a%20Named%20Load-111714?style=flat-square&labelColor=0b0e0c&color=f59e0b" alt="Fast at a Named Load">
+  <img src="https://img.shields.io/badge/UX-Complexity%20Hidden%20Inside%20(0%20Knobs)-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="Complexity Hidden Inside">
+  <a href="https://www.itsavibe.ai"><img src="https://img.shields.io/badge/provenance-VIBES%20Audit%20%26%20Local%20Telemetry-111714?style=flat-square&labelColor=0b0e0c&color=38bdf8" alt="VIBES Audit & Local Telemetry"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/version-v0.2.0%20%C2%B7%20MIT-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.2.0 MIT"></a>
 </p>
 
 <p align="center">
@@ -246,11 +250,11 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 ## The NeckBeard Badge & Seal of Survival ([neckbeard.tech](https://neckbeard.tech))
 
 <p align="center">
-  <a href="https://neckbeard.tech"><img src="assets/badge.svg" width="348" height="28" alt="NeckBeard Audited: Safe · Fast · Done (owner_id=$1, 0 knobs)"></a>
+  <a href="https://neckbeard.tech"><img src="assets/badge.svg" width="436" height="28" alt="NeckBeard Audited: Minimal Code · Boundary Safe · Scales at Load"></a>
 </p>
 
 <p align="center">
-  <a href="https://neckbeard.tech"><img src="assets/seal.png" width="340" alt="NeckBeard Seal of Survival — 3 A.M. Bridge Certified"></a>
+  <a href="https://neckbeard.tech"><img src="assets/seal.png" width="380" alt="Built & Audited with NeckBeard — Principal-Engineer Verified"></a>
 </p>
 
 > [!IMPORTANT]
@@ -261,13 +265,13 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 **Compact README Pill Badge (Markdown):**
 
 ```markdown
-[![NeckBeard Audited: Safe · Fast · Done](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)
+[![NeckBeard Audited: Minimal Code · Boundary Safe · Scales at Load](https://neckbeard.tech/assets/badge.svg)](https://neckbeard.tech)
 ```
 
-**Full "3 A.M. Bridge Certified" Seal of Survival (Markdown):**
+**Full "Built & Audited with NeckBeard" Value Seal (Markdown):**
 
 ```markdown
-[![NeckBeard Seal of Survival — 3 A.M. Bridge Certified](https://neckbeard.tech/assets/seal.svg)](https://neckbeard.tech)
+[![Built & Audited with NeckBeard — Principal-Engineer Verified](https://neckbeard.tech/assets/seal.svg)](https://neckbeard.tech)
 ```
 
 ---

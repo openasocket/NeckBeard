@@ -18,6 +18,10 @@ NeckBeard is a host-portable principal-engineer skillset. The writing rules and 
 | **Cursor, Windsurf, Kiro** | [`AGENTS.md`](../AGENTS.md) | Do not read `AGENTS.md` unless their own rules file (`.cursor/rules/`, `.windsurf/rules/`, `.kiro/steering/`) includes it. |
 | **Any other agent** | [`AGENTS.md`](../AGENTS.md) | Copy `AGENTS.md` into the root of the project. |
 
+## Cross-Platform Multi-Harness Auto-Discovery & Sync (`scripts/install-all.js`)
+
+Running `node scripts/install-all.js` (or `npm run sync`) on Windows, macOS, or Linux automatically detects all installed agent harnesses from the matrix above, runs their CLI marketplace/update commands (`spawnSync` argument arrays), syncs their local plugin cache directories (`~/.claude/plugins`, `~/.codex/plugins`, `~/.grok/installed-plugins`, `~/.gemini/config/plugins`, `~/.gemini/extensions`, `~/.pi/agent/extensions`, `~/.config/opencode/plugins`) to the current NeckBeard version, disables legacy `ponytail@ponytail` collisions, and rebuilds `~/.config/neckbeard/telemetry/dashboard.html`.
+
 ## Adapter Invariants (Enforced by `npm test`)
 
 1. **Single source of truth:** The body of [`skills/neckbeard/SKILL.md`](../skills/neckbeard/SKILL.md) after YAML frontmatter and [`AGENTS.md`](../AGENTS.md) are byte-for-byte identical.

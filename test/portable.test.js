@@ -197,6 +197,7 @@ test('shared description pitch across manifests, README, and hooks/lib.js', () =
   }
   for (const doc of ['README.md', 'INSTALL.md', 'docs/agent-portability.md']) {
     const text = readText(doc);
+    assert.ok(text.includes('scripts/install-all.js'), `${doc} must document scripts/install-all.js`);
     assert.ok(!/\/(?:Users|home)\//.test(text), `${doc} must not contain local home directory paths`);
     assert.ok(!text.includes('dev-' + 'shit'), `${doc} must not contain local workspace paths`);
   }

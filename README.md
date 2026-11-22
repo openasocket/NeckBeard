@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/scale-Targeted%20Scalability%20(Fast%20at%20Your%20Load%2C%20Not%20100x)-111714?style=flat-square&labelColor=0b0e0c&color=f59e0b" alt="Targeted Scalability">
   <img src="https://img.shields.io/badge/UX-Complexity%20Hidden%20Inside%20(0%20Knobs)-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="Complexity Hidden Inside">
   <a href="https://www.itsavibe.ai"><img src="https://img.shields.io/badge/provenance-VIBES%20Audit%20%26%20Local%20Telemetry-111714?style=flat-square&labelColor=0b0e0c&color=38bdf8" alt="VIBES Audit & Local Telemetry"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/version-v0.3.1%20%C2%B7%20MIT-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.3.1 MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/version-v0.3.2%20%C2%B7%20MIT-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.3.2 MIT"></a>
 </p>
 
 <p align="center">

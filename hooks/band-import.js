@@ -194,55 +194,68 @@ function generateCommandCenterHtml(records, workspacesMeta = {}, generatedAtMs =
 :root{color-scheme:dark;--bg:#060908;--surface:#0b110e;--card:#101814;--border:#1d2b23;--emerald:#10b981;--cyan:#06b6d4;--amber:#f59e0b;--red:#ef4444;--text:#ecf3ef;--muted:#8b9d92;--dim:#55665c;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--sans:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
-.shell{display:grid;grid-template-columns:284px minmax(0,1fr);min-height:100vh}
-.rail{background:var(--surface);border-right:1px solid var(--border);padding:22px 16px;display:flex;flex-direction:column;gap:6px}
-.crest{display:flex;align-items:center;gap:12px;padding:4px 8px 18px;border-bottom:1px solid var(--border);margin-bottom:10px}
+.shell{display:grid;grid-template-columns:292px minmax(0,1fr);min-height:100vh}
+.rail{background:var(--surface);border-right:1px solid var(--border);padding:20px 14px;display:flex;flex-direction:column;gap:5px;position:sticky;top:0;height:100vh}
+.crest{display:flex;align-items:center;gap:12px;padding:4px 8px 16px;border-bottom:1px solid var(--border);margin-bottom:8px}
 .tp{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 10px var(--red)}
 .crest-title{font:800 16px/1.1 var(--mono);color:var(--text);display:flex;align-items:center;gap:7px}
 .crest-sub{font:600 10.5px var(--mono);color:var(--emerald);margin-top:4px;letter-spacing:.05em}
-.rail-lbl{font:700 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:8px 10px 4px}
-.ws-btn{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid transparent;background:transparent;color:var(--muted);font:500 13px var(--sans);padding:8px 12px;border-radius:10px;cursor:pointer;text-align:left;gap:6px}
-.ws-btn:hover,.ws-btn.active{background:var(--card);color:var(--text);border-color:var(--border)}
-.ws-badges{display:inline-flex;align-items:center;gap:5px}
-.ws-vtag{font:700 9.5px var(--mono);color:var(--cyan);background:rgba(6,182,212,.14);border:1px solid rgba(6,182,212,.35);padding:1px 6px;border-radius:99px}
-.ws-cnt{font:600 11.5px var(--mono);color:var(--emerald);background:rgba(16,185,129,.12);padding:2px 7px;border-radius:99px}
-.rail-foot{margin-top:auto;padding:14px 10px 4px;border-top:1px solid var(--border);font:500 11.5px/1.6 var(--mono);color:var(--dim)}
-.stage{padding:26px 34px 64px;max-width:1480px;width:100%}
-.topbar{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.rail-lbl{font:700 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);padding:6px 10px 4px;display:flex;justify-content:space-between}
+.ws-btn{display:flex;justify-content:space-between;align-items:center;width:100%;border:1px solid transparent;background:transparent;color:var(--muted);font:500 12.5px var(--sans);padding:8px 10px;border-radius:9px;cursor:pointer;text-align:left;gap:6px;transition:background .12s,border-color .12s}
+.ws-btn:hover{background:rgba(16,24,20,.7);color:var(--text)}
+.ws-btn.active{background:var(--card);color:var(--text);border-color:var(--emerald);box-shadow:inset 3px 0 0 var(--emerald)}
+.ws-ncol{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-badges{display:inline-flex;align-items:center;gap:5px;flex-shrink:0}
+.ws-vtag{font:700 9px var(--mono);color:var(--cyan);background:rgba(6,182,212,.14);border:1px solid rgba(6,182,212,.35);padding:1px 5px;border-radius:99px}
+.ws-ctag{font:600 10.5px var(--mono);color:var(--amber)}
+.ws-cnt{font:600 11px var(--mono);color:var(--emerald);background:rgba(16,185,129,.12);padding:1px 6px;border-radius:99px}
+.rail-foot{margin-top:auto;padding:12px 10px 4px;border-top:1px solid var(--border);font:500 11px/1.55 var(--mono);color:var(--dim)}
+.stage{padding:24px 32px 64px;max-width:1520px;width:100%}
+.topbar{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.t-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .topbar h1{margin:0;font:800 24px/1.15 var(--mono);letter-spacing:-.02em}
-.topbar p{margin:5px 0 0;color:var(--muted);font:400 13px var(--mono)}
+.topbar p{margin:5px 0 0;color:var(--muted);font:400 12.5px var(--mono)}
+.back-btn{display:none;border:1px solid rgba(16,185,129,.45);background:rgba(16,185,129,.14);color:var(--emerald);font:600 11.5px var(--mono);padding:4px 10px;border-radius:99px;cursor:pointer}
+.back-btn:hover{background:rgba(16,185,129,.25)}
 .views{display:inline-flex;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:4px;gap:4px;flex-wrap:wrap}
 .v-btn{border:0;background:transparent;color:var(--muted);font:600 12px var(--mono);padding:8px 13px;border-radius:8px;cursor:pointer}
 .v-btn.active{background:var(--card);color:var(--emerald);box-shadow:inset 0 0 0 1px rgba(16,185,129,.35)}
-.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:20px}
-.vpillars{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:14px}
-.pbox{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 14px}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:18px}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:15px;padding:16px 18px}
+.m-tag{font:700 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
+.m-val{font:800 24px/1.15 var(--mono);margin-top:7px;color:var(--text)}
+.m-sub{font:400 11.5px var(--mono);color:var(--muted);margin-top:5px}
+.m-comp{font:600 11px var(--mono);color:var(--cyan);margin-top:4px}
+.card-sec{margin-top:18px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 22px}
+.card-sec.econ-hi{border-color:rgba(16,185,129,.4);background:linear-gradient(180deg,rgba(16,185,129,.05) 0%,var(--card) 100%)}
+.card-sec.vibes-hi{border-color:rgba(6,182,212,.45);background:linear-gradient(180deg,rgba(6,182,212,.05) 0%,var(--card) 100%)}
+.sec-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.sec-head h2{margin:0;font:700 15.5px var(--mono);display:flex;align-items:center;gap:10px}
+.split2{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:14px}
+.vpillars{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:12px}
+.pbox{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
 .pk{font:700 10.5px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--cyan)}
-.pv{font:800 20px/1.2 var(--mono);margin-top:6px;color:var(--text)}
+.pv{font:800 19px/1.2 var(--mono);margin-top:5px;color:var(--text)}
 .ps{font:400 11px var(--mono);color:var(--muted);margin-top:4px}
-.panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:18px 20px}
-.m-tag{font:700 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
-.m-val{font:800 25px/1.15 var(--mono);margin-top:8px;color:var(--text)}
-.m-sub{font:400 11.5px var(--mono);color:var(--dim);margin-top:6px}
-.card-sec{margin-top:20px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px}
-.card-sec.vibes-hi{border-color:rgba(6,182,212,.45);background:linear-gradient(180deg,rgba(6,182,212,.06) 0%,var(--card) 100%)}
-.sec-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-.sec-head h2{margin:0;font:700 16px var(--mono);display:flex;align-items:center;gap:10px}
-.split2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
-.adopt-bar{margin-top:14px;background:rgba(6,182,212,.07);border:1px dashed rgba(6,182,212,.45);border-radius:12px;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-.adopt-cmd{font:500 12px var(--mono);background:#060908;border:1px solid var(--border);padding:8px 12px;border-radius:8px;color:var(--emerald)}
-.act-btn{border:1px solid rgba(6,182,212,.45);background:rgba(6,182,212,.14);color:var(--cyan);font:600 12px var(--mono);padding:7px 13px;border-radius:8px;cursor:pointer}
+.adopt-bar{background:rgba(6,182,212,.07);border:1px dashed rgba(6,182,212,.45);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.adopt-cmd{font:500 11.5px var(--mono);background:#060908;border:1px solid var(--border);padding:7px 11px;border-radius:8px;color:var(--emerald)}
+.act-btn{border:1px solid rgba(6,182,212,.45);background:rgba(6,182,212,.14);color:var(--cyan);font:600 11.5px var(--mono);padding:6px 12px;border-radius:8px;cursor:pointer}
 .act-btn:hover{background:rgba(6,182,212,.25)}
-.s-in{background:var(--surface);border:1px solid var(--border);color:var(--text);font:500 12px var(--mono);padding:6px 11px;border-radius:8px;min-width:210px}
-table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{text-align:left;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:10px 12px;border-bottom:1px solid var(--border)}
-td{padding:11px 12px;border-bottom:1px solid var(--border);font-family:var(--mono)}
-td.tcol{font-family:var(--sans);font-weight:500}
-tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
+.s-in{background:var(--surface);border:1px solid var(--border);color:var(--text);font:500 12px var(--mono);padding:6px 11px;border-radius:8px;min-width:220px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font:600 10.5px var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--dim);padding:9px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface)}
+td{padding:9px 10px;border-bottom:1px solid var(--border);font-family:var(--mono)}
+td.tcol{font-family:var(--sans);font-weight:600}
+tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.08)}
+tr.srow{background:rgba(16,185,129,.16);box-shadow:inset 3px 0 0 var(--emerald)}
+tr.brow{background:rgba(6,182,212,.09);font-weight:700}
+.sb-w{display:inline-flex;align-items:center;gap:6px;width:100%}
+.sb-bg{width:54px;height:7px;background:#080d0b;border-radius:4px;overflow:hidden;border:1px solid var(--border);display:inline-block}
+.sb-f{height:100%;background:var(--emerald);display:block}
 .chip{display:inline-block;padding:3px 9px;border-radius:99px;font:600 11px var(--mono);background:rgba(16,185,129,.14);color:var(--emerald)}
 .chip.cyan{background:rgba(6,182,212,.16);color:var(--cyan)}
 .chip.warn{background:rgba(245,158,11,.16);color:var(--amber)}
-@media(max-width:1180px){.shell{grid-template-columns:1fr}.rail{border-right:0;border-bottom:1px solid var(--border)}.kpis,.vpillars,.split2{grid-template-columns:1fr}}
+@media(max-width:1180px){.shell{grid-template-columns:1fr}.rail{border-right:0;border-bottom:1px solid var(--border);position:static;height:auto}.kpis,.vpillars,.split2{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -255,116 +268,129 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
         <div class="crest-sub">SAFE · RIGHT-SIZED · DONE</div>
       </div>
     </div>
-    <div class="rail-lbl">Workspaces (<span id="ws-total-cnt">0</span>)</div>
-    <div id="ws-list" style="overflow-y:auto;max-height:70vh"></div>
-    <div class="rail-foot">NeckBeard Command Center v0.3.1<br>3-Gate Engine + VIBES Hub<br>100% Local · Zero Network Calls</div>
+    <div class="rail-lbl"><span>Workspaces (<span id="ws-total-cnt">0</span>)</span><span>Spend / Sess</span></div>
+    <div id="ws-list" style="overflow-y:auto;flex:1"></div>
+    <div class="rail-foot">NeckBeard Command Center v0.3.1<br>Economics + 3-Gate + VIBES Hub<br>100% Local · Zero Network Calls</div>
   </aside>
   <main class="stage">
     <header class="topbar">
-      <div><h1 id="st-title">All Workspaces</h1><p id="st-subtitle"></p></div>
+      <div>
+        <div class="t-row">
+          <h1 id="st-title">All Workspaces</h1>
+          <button type="button" id="back-all-btn" class="back-btn">← Compare All Workspaces</button>
+          <span id="st-vibes-pill" class="chip cyan" style="display:none"></span>
+        </div>
+        <p id="st-subtitle"></p>
+      </div>
       <div class="views" role="tablist">
         <button type="button" class="v-btn active" data-view="overview">1. Command Overview</button>
-        <button type="button" class="v-btn" data-view="vibes">2. VIBES (.ai-audit) Hub</button>
-        <button type="button" class="v-btn" data-view="economics">3. Repo &amp; Model Economics</button>
+        <button type="button" class="v-btn" data-view="economics">2. Economics &amp; All-Workspaces ROI</button>
+        <button type="button" class="v-btn" data-view="vibes">3. VIBES (.ai-audit) Hub</button>
         <button type="button" class="v-btn" data-view="topology">4. Trust-Boundary Graph</button>
         <button type="button" class="v-btn" data-view="forensics">5. Session Forensics</button>
       </div>
     </header>
     <div class="kpis">
-      <div class="panel"><div class="m-tag"><span>Code Minimalism &amp; Reuse</span><span style="color:var(--emerald)">6-RUNG LADDER</span></div><div class="m-val" id="m-loc">+0 / -0 LOC</div><div class="m-sub" id="m-reuse">Symbol reuse ratio across edits</div></div>
-      <div class="panel"><div class="m-tag"><span>PreToolUse Shield &amp; Safety</span><span style="color:var(--cyan)">GATE 1: SAFE</span></div><div class="m-val" id="m-sec">0 blocked</div><div class="m-sub" id="m-vibes">Secrets, config censor &amp; VIBES lock</div></div>
-      <div class="panel"><div class="m-tag"><span>Token Cache &amp; Cost Efficiency</span><span style="color:var(--amber)">GATE 2: SCALE</span></div><div class="m-val" id="m-cost">$0.00</div><div class="m-sub" id="m-cache">0% prompt cache hit rate</div></div>
-      <div class="panel"><div class="m-tag"><span>Active Engineering Velocity</span><span style="color:var(--emerald)">GATE 3: DONE</span></div><div class="m-val" id="m-time">0h 0m</div><div class="m-sub" id="m-load">Load target from .neckbeard.json</div></div>
+      <div class="panel"><div class="m-tag"><span>API Spend &amp; Unit Economics</span><span style="color:var(--emerald)">ECONOMICS</span></div><div class="m-val" id="m-cost">$0.00</div><div class="m-sub" id="m-cost-unit">$0.00 / session · $0.00 / turn</div><div class="m-comp" id="m-cost-comp">100% of portfolio spend</div></div>
+      <div class="panel"><div class="m-tag"><span>Prompt-Cache Dollar Savings</span><span style="color:var(--cyan)">CACHE ROI</span></div><div class="m-val" id="m-saved" style="color:var(--cyan)">$0.00 saved</div><div class="m-sub" id="m-cache">0% cache hit rate · 0 tokens</div><div class="m-comp" id="m-cache-comp">Prompt caching efficiency</div></div>
+      <div class="panel"><div class="m-tag"><span>Active Engineering Velocity</span><span style="color:var(--amber)">THROUGHPUT</span></div><div class="m-val" id="m-time">0h 0m</div><div class="m-sub" id="m-turns">0 sessions · 0 turns</div><div class="m-comp" id="m-load">Target load: unset</div></div>
+      <div class="panel"><div class="m-tag"><span>Security Shield &amp; Code Delta</span><span style="color:var(--emerald)">3 GATES</span></div><div class="m-val" id="m-sec">0 blocked</div><div class="m-sub" id="m-loc">+0 / -0 LOC · 0/0 issues fixed</div><div class="m-comp" id="m-vibes">PreToolUse &amp; VIBES status</div></div>
     </div>
 
-    <!-- FRONT-AND-CENTER VIBES PROTOCOL (.ai-audit/) DATA VISUALIZATION & ADOPTION HUB -->
+    <!-- FRONT-AND-CENTER SECTION 1: ECONOMICS, CACHE SAVINGS & ALL-WORKSPACES BENCHMARKING -->
+    <section class="card-sec econ-hi" id="pane-economics">
+      <div class="sec-head">
+        <h2><span id="econ-title">Front-and-Center Economics: Spend vs. Prompt-Cache Savings &amp; Workspace Comparison</span></h2>
+        <span id="econ-badge" class="chip">All Workspaces Baseline</span>
+      </div>
+      <div style="background:#080d0b;border:1px solid var(--border);border-radius:12px;padding:14px">
+        <svg id="velocity-svg" viewBox="0 0 960 235" style="width:100%;height:auto;display:block"></svg>
+      </div>
+      <div class="split2">
+        <div>
+          <div style="font:700 11.5px var(--mono);color:var(--emerald);margin-bottom:8px;display:flex;justify-content:space-between">
+            <span>WORKSPACE VS. ALL-WORKSPACES ECONOMICS MATRIX (CLICK ANY ROW TO INSPECT)</span>
+          </div>
+          <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:330px">
+            <table><thead><tr><th>Workspace</th><th>Sessions / Turns</th><th>Active Time</th><th>Cache Hit %</th><th>Est. Saved</th><th>Actual Spend</th><th>Share of Total</th><th>VIBES</th></tr></thead><tbody id="repo-scorecard-rows"></tbody></table>
+          </div>
+        </div>
+        <div>
+          <div style="font:700 11.5px var(--mono);color:var(--amber);margin-bottom:8px;display:flex;justify-content:space-between">
+            <span id="model-table-title">MODEL &amp; PROMPT-CACHE ECONOMICS (SELECTED SCOPE)</span>
+          </div>
+          <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:330px">
+            <table><thead><tr><th>Model</th><th>Sess / Turns</th><th>Input + Cache</th><th>Output</th><th>Cache Hit</th><th>Est. Saved</th><th>Spend</th></tr></thead><tbody id="model-econ-rows"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: VIBES PROTOCOL (.ai-audit/) PROVENANCE & PRISM RISK HUB -->
     <section class="card-sec vibes-hi" id="pane-vibes">
       <div class="sec-head">
         <h2>
-          <span>VIBES Protocol (.ai-audit/) Provenance &amp; PRISM Risk Intelligence</span>
+          <span id="vibes-heading">VIBES Protocol (.ai-audit/) Provenance &amp; PRISM Risk Intelligence</span>
           <a href="https://www.itsavibe.ai" target="_blank" rel="noopener" class="chip cyan">itsavibe.ai ↗</a>
         </h2>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span id="vibes-status-chip" class="chip">Checking .ai-audit/...</span>
-          <button type="button" id="vibes-demo-btn" class="act-btn">Preview Full VIBES (.ai-audit/) Forensics</button>
+          <button type="button" id="vibes-demo-btn" class="act-btn">Preview Reference VIBES Forensics</button>
         </div>
       </div>
-      <p id="vibes-explainer" style="margin:0 0 12px;color:var(--muted);font-size:13px"></p>
-      <div class="vpillars">
-        <div class="pbox"><div class="pk">1. VIBES v1.1 Provenance</div><div class="pv" id="vp-prov">0 annotations</div><div class="ps" id="vp-prov-sub">0 blobs · 0 files attributed</div></div>
-        <div class="pbox"><div class="pk">2. VERIFY v1.0 DSSE</div><div class="pv" id="vp-verify">0% verified</div><div class="ps" id="vp-verify-sub">0 Ed25519 DSSE envelopes</div></div>
-        <div class="pbox"><div class="pk">3. PRISM v1.0 Risk</div><div class="pv" id="vp-prism">0.00 max</div><div class="ps" id="vp-prism-sub">0 High/Critical (&gt;= 0.60)</div></div>
-        <div class="pbox"><div class="pk">4. EVOLVE v1.0 Decisions</div><div class="pv" id="vp-evolve">0 decisions</div><div class="ps" id="vp-evolve-sub">Linked to /neckbeard-debt</div></div>
-        <div class="pbox"><div class="pk">5. TRACE v1.0 Forensics</div><div class="pv" id="vp-trace">0 / 0 fixed</div><div class="ps" id="vp-trace-sub">IoC rules &amp; incident response</div></div>
-      </div>
-      <div style="margin-top:16px;background:#080d0b;border:1px solid var(--border);border-radius:12px;padding:14px">
-        <svg id="vibes-svg" viewBox="0 0 960 255" style="width:100%;height:auto;display:block"></svg>
-      </div>
-      <div class="split2">
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px">
-          <div style="font:700 12px var(--mono);color:var(--emerald);margin-bottom:8px">EVOLVE ARCHITECTURAL DECISIONS &amp; PRETOOLUSE IMMUTABILITY SHIELD</div>
-          <div id="vibes-decisions-list" style="font:400 12px/1.65 var(--mono);color:var(--muted)"></div>
+      <p id="vibes-explainer" style="margin:0 0 10px;color:var(--muted);font-size:12.5px"></p>
+      <div id="vibes-active-body">
+        <div class="vpillars">
+          <div class="pbox"><div class="pk">1. VIBES v1.1 Provenance</div><div class="pv" id="vp-prov">0 annotations</div><div class="ps" id="vp-prov-sub">0 blobs · 0 files attributed</div></div>
+          <div class="pbox"><div class="pk">2. VERIFY v1.0 DSSE</div><div class="pv" id="vp-verify">0% verified</div><div class="ps" id="vp-verify-sub">0 Ed25519 DSSE envelopes</div></div>
+          <div class="pbox"><div class="pk">3. PRISM v1.0 Risk</div><div class="pv" id="vp-prism">0.00 max</div><div class="ps" id="vp-prism-sub">0 High/Critical (&gt;= 0.60)</div></div>
+          <div class="pbox"><div class="pk">4. EVOLVE v1.0 Decisions</div><div class="pv" id="vp-evolve">0 decisions</div><div class="ps" id="vp-evolve-sub">Linked to /neckbeard-debt</div></div>
+          <div class="pbox"><div class="pk">5. TRACE v1.0 Forensics</div><div class="pv" id="vp-trace">0 / 0 fixed</div><div class="ps" id="vp-trace-sub">IoC rules &amp; incident response</div></div>
         </div>
-        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px">
-          <div style="font:700 12px var(--mono);color:var(--amber);margin-bottom:8px">TRACE INCIDENT LOG &amp; HIGH-RISK PRISM EDITS (&gt;= 0.60)</div>
-          <div id="vibes-incidents-list" style="font:400 12px/1.65 var(--mono);color:var(--muted)"></div>
+        <div style="margin-top:14px;background:#080d0b;border:1px solid var(--border);border-radius:12px;padding:14px">
+          <svg id="vibes-svg" viewBox="0 0 960 250" style="width:100%;height:auto;display:block"></svg>
         </div>
-      </div>
-      <div id="vibes-annotations-wrap" style="margin-top:16px;display:none">
-        <div style="font:700 12px var(--mono);color:var(--cyan);margin-bottom:8px">TURN-LEVEL .AI-AUDIT/ANNOTATIONS.JSONL PROVENANCE &amp; PRISM INSPECTOR</div>
-        <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px">
-          <table><thead><tr><th>Timestamp</th><th>Session</th><th>Attributed File</th><th>Line Attribution</th><th>PRISM Risk</th><th>VERIFY DSSE</th><th>Intent / Prompt Summary</th></tr></thead><tbody id="vibes-annotations-rows"></tbody></table>
-        </div>
-      </div>
-      <div class="adopt-bar" id="vibes-adopt-banner">
-        <div style="max-width:700px">
-          <div style="font:700 13px var(--mono);color:var(--cyan)">🚀 Unlock 5-Pillar VIBES (.ai-audit/) Provenance in Every Project</div>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:4px">
-            Without VIBES, NeckBeard tracks session cost, token cache efficiency, guard blocks, and <code>.neckbeard.json</code> trust boundaries. Enabling <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> adds line-range file attribution, Ed25519 DSSE attestations locked by <code>hooks/guard.js</code>, per-turn PRISM risk scores for <code>/neckbeard-review</code>, EVOLVE decision records for <code>/neckbeard-debt</code>, and TRACE incident forensics.
+        <div class="split2">
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px">
+            <div style="font:700 11.5px var(--mono);color:var(--emerald);margin-bottom:8px">EVOLVE ARCHITECTURAL DECISIONS &amp; PRETOOLUSE IMMUTABILITY SHIELD</div>
+            <div id="vibes-decisions-list" style="font:400 12px/1.6 var(--mono);color:var(--muted)"></div>
+          </div>
+          <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px">
+            <div style="font:700 11.5px var(--mono);color:var(--amber);margin-bottom:8px">TRACE INCIDENT LOG &amp; HIGH-RISK PRISM EDITS (&gt;= 0.60)</div>
+            <div id="vibes-incidents-list" style="font:400 12px/1.6 var(--mono);color:var(--muted)"></div>
           </div>
         </div>
-        <div class="adopt-cmd">vibecheck init --project-name my-app --assurance-level high &amp;&amp; vibes install-hooks &amp;&amp; vibecheck verify</div>
-      </div>
-    </section>
-
-    <!-- BASELINE ENGINEERING VALUE: 14-DAY COST/CACHE VELOCITY CHART + PER-REPO & PER-MODEL ECONOMICS -->
-    <section class="card-sec" id="pane-economics">
-      <div class="sec-head">
-        <h2>Engineering Velocity, Per-Repository Scorecard &amp; Model Cache Economics</h2>
-        <span class="chip">100% Local Telemetry</span>
-      </div>
-      <div style="background:#080d0b;border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:18px">
-        <svg id="velocity-svg" viewBox="0 0 960 210" style="width:100%;height:auto;display:block"></svg>
-      </div>
-      <div class="split2">
-        <div>
-          <div style="font:700 12px var(--mono);color:var(--emerald);margin-bottom:8px">PER-REPOSITORY ENGINEERING SCORECARD (CLICK TO FILTER)</div>
-          <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:320px">
-            <table><thead><tr><th>Repository</th><th>Sessions</th><th>Active Time</th><th>Cache Hit</th><th>Cost</th><th>VIBES / Load</th></tr></thead><tbody id="repo-scorecard-rows"></tbody></table>
+        <div id="vibes-annotations-wrap" style="margin-top:14px">
+          <div style="font:700 11.5px var(--mono);color:var(--cyan);margin-bottom:8px">TURN-LEVEL .AI-AUDIT/ANNOTATIONS.JSONL PROVENANCE &amp; PRISM INSPECTOR</div>
+          <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:290px">
+            <table><thead><tr><th>Timestamp</th><th>Session</th><th>Attributed File</th><th>Line Attribution</th><th>PRISM Risk</th><th>VERIFY DSSE</th><th>Intent / Prompt Summary</th></tr></thead><tbody id="vibes-annotations-rows"></tbody></table>
           </div>
         </div>
-        <div>
-          <div style="font:700 12px var(--mono);color:var(--amber);margin-bottom:8px">MODEL &amp; PROMPT-CACHE ECONOMICS BREAKDOWN</div>
-          <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;max-height:320px">
-            <table><thead><tr><th>Model</th><th>Sessions / Turns</th><th>Prompt + Cache</th><th>Output Tok</th><th>Cache Hit %</th><th>Total Cost</th></tr></thead><tbody id="model-econ-rows"></tbody></table>
+      </div>
+      <div class="adopt-bar" id="vibes-adopt-banner" style="display:none">
+        <div style="max-width:680px">
+          <div style="font:700 12.5px var(--mono);color:var(--cyan)">Enable VIBES (.ai-audit/) Provenance in <span id="vibes-adopt-ws">this workspace</span></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px">
+            Add content-addressed line attribution, Ed25519 DSSE attestations locked by <code>hooks/guard.js</code>, PRISM risk scoring for <code>/neckbeard-review</code>, and TRACE forensics:
           </div>
         </div>
+        <div class="adopt-cmd" id="vibes-adopt-cmd">vibecheck init --project-name my-app --assurance-level high &amp;&amp; vibes install-hooks &amp;&amp; vibecheck verify</div>
       </div>
     </section>
 
     <section class="card-sec" id="pane-overview">
-      <div class="sec-head"><h2>External → Internal Trust-Boundary Graph</h2><span id="ov-drift" class="chip">✓ Baseline Verified</span></div>
+      <div class="sec-head"><h2 id="topo-heading">External → Internal Trust-Boundary Graph</h2><span id="ov-drift" class="chip">✓ Baseline Verified</span></div>
       <svg id="boundary-svg" viewBox="0 0 960 360" style="width:100%;height:auto;display:block"></svg>
     </section>
     <section class="card-sec" id="pane-forensics">
       <div class="sec-head">
-        <h2>Recorded Engineering &amp; Audit Sessions</h2>
+        <h2 id="forensics-heading">Recorded Engineering &amp; Audit Sessions</h2>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="search" id="session-search" class="s-in" placeholder="Filter by task, repo, model...">
           <span id="tbl-count" class="chip">0 sessions</span>
         </div>
       </div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Task / Prompt</th><th>Workspace</th><th>Timestamp</th><th>Model &amp; Level</th><th>Duration</th><th>Cost &amp; Tokens</th><th>Reuse &amp; Net LOC</th><th>Guard &amp; VIBES</th><th>Verification</th></tr></thead><tbody id="session-rows"></tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Task / Prompt</th><th>Workspace</th><th>Timestamp</th><th>Model &amp; Level</th><th>Duration</th><th>Cost &amp; Tokens</th><th>Cache Saved</th><th>Guard &amp; VIBES</th><th>Verification</th></tr></thead><tbody id="session-rows"></tbody></table></div>
     </section>
   </main>
 </div>
@@ -403,6 +429,37 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
   function el(i){return document.getElementById(i)}
   function fmtTok(n){return n<1000?String(Math.round(n)):n<1e6?+(n/1e3).toFixed(1)+'k':+(n/1e6).toFixed(1)+'M'}
   function fmtDur(ms){var m=Math.round((ms||0)/60000);return m<60?m+'m':Math.floor(m/60)+'h '+(m%60)+'m'}
+  function fmtUsd(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+  function estSaved(r){
+    var tb=(r&&r.tokenBuckets)||{},cr=tb.cachedReadTokens||0;if(cr<=0)return 0;
+    var m=String((r&&r.modelId)||'').toLowerCase(),rate=m.includes('opus')?4.0:m.includes('haiku')?0.5:2.5;
+    return(cr/1e6)*rate;
+  }
+  function sumList(list){
+    var s={sessions:list.length,turns:0,cost:0,saved:0,tok:0,cRead:0,inAll:0,outTok:0,dur:0,ins:0,del:0,blk:0,found:0,fixed:0};
+    list.forEach(function(r){
+      s.cost+=r.totalCostUsd||0;s.saved+=estSaved(r);
+      var tb=r.tokenBuckets||{},pT=tb.promptTokens||0,cT=tb.completionTokens||0,crT=tb.cachedReadTokens||0,cwT=tb.cachedWriteTokens||0;
+      s.tok+=pT+cT+crT+cwT;s.cRead+=crT;s.inAll+=pT+crT+cwT;s.outTok+=cT;
+      s.dur+=r.activeDurationMs||0;s.turns+=r.turnCount||1;
+      s.ins+=r.linesInserted||0;s.del+=r.linesDeleted||0;s.blk+=r.guardBlockCount||0;
+      s.found+=r.securityFindingsTotal||0;s.fixed+=r.securityFindingsResolved||0;
+    });
+    s.cacheHitPct=s.inAll>0?Math.round((s.cRead/s.inAll)*100):0;
+    s.costPerSession=s.sessions>0?s.cost/s.sessions:0;
+    s.costPerTurn=s.turns>0?s.cost/s.turns:0;
+    s.turnsPerSession=s.sessions>0?s.turns/s.sessions:0;
+    return s;
+  }
+  var portStats=sumList(records);
+  function selectWs(wsName){
+    activeWorkspace=wsName||'';
+    document.querySelectorAll('.ws-btn').forEach(function(b){
+      var bw=b.getAttribute('data-ws')||'';
+      b.classList.toggle('active',bw===activeWorkspace);
+    });
+    render();
+  }
   function aggAllVibes(){
     var ks=Object.keys(meta),agg={present:false,vibesRepoCount:0,annotationsCount:0,verifiedCount:0,blobsCount:0,attestationsCount:0,iocRulesCount:0,maxPrismRisk:0,highRiskCount:0,traceIncidents:0,traceResolved:0,decisions:0,linesAdded:0,linesRemoved:0,filesTouchedCount:0,prismBuckets:{low:0,moderate:0,high:0,critical:0},fileHotspots:[],decisionRecords:[],incidentRecords:[],recentAnnotations:[]};
     ks.forEach(function(k){
@@ -430,40 +487,43 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
     return aggAllVibes();
   }
   function renderVibes(wsKey){
-    var v=resolveVibes(wsKey),chip=el('vibes-status-chip'),dbtn=el('vibes-demo-btn'),exp=el('vibes-explainer'),awrap=el('vibes-annotations-wrap'),abar=el('vibes-adopt-banner');
+    var v=resolveVibes(wsKey),chip=el('vibes-status-chip'),dbtn=el('vibes-demo-btn'),exp=el('vibes-explainer'),abody=el('vibes-active-body'),abar=el('vibes-adopt-banner'),aws=el('vibes-adopt-ws'),acmd=el('vibes-adopt-cmd');
+    el('vibes-heading').textContent=wsKey?('VIBES (.ai-audit/) Provenance & PRISM Risk — '+wsKey):'VIBES Protocol (.ai-audit/) Provenance & PRISM Risk — All Workspaces';
+    if(aws)aws.textContent=wsKey||'this workspace';
+    if(acmd)acmd.textContent='vibecheck init --project-name '+(wsKey||'my-app')+' --assurance-level high && vibes install-hooks && vibecheck verify';
     if(v&&v.present){
       chip.className=v.isDemo?'chip warn':'chip cyan';
-      chip.textContent=v.isDemo?'★ Interactive Reference VIBES (.ai-audit/) Forensics Active':(v.vibesRepoCount?('● VIBES (.ai-audit/) Active Across '+v.vibesRepoCount+' Workspaces · PreToolUse Shield Armed'):'● VIBES (.ai-audit/) Active in Workspace · 5-Pillar Deep Forensics Unlocked');
-      dbtn.textContent=v.isDemo?'Exit Reference Preview':'Toggle Reference Preview';
-      exp.innerHTML='<strong>VIBES Deep Forensics Active:</strong> Showing line-range file attribution (<code>VIBES v1.1</code>), Ed25519 DSSE &amp; high-assurance attestation coverage (<code>VERIFY v1.0</code>), per-turn risk distribution &amp; sparkline (<code>PRISM v1.0</code>), content-addressed reasoning &amp; decision records (<code>EVOLVE v1.0</code>), and IoC incident response (<code>TRACE v1.0</code>).';
-      awrap.style.display='block';
-      if(abar)abar.style.display=v.isDemo?'flex':'none';
+      chip.textContent=v.isDemo?'★ Interactive Reference VIBES (.ai-audit/) Forensics Active':(v.vibesRepoCount?('● VIBES Active Across '+v.vibesRepoCount+' Workspaces'):('● VIBES Active in '+wsKey));
+      dbtn.textContent=v.isDemo?'Exit Reference Preview':'Preview Reference Dataset';
+      exp.innerHTML='<strong>5-Pillar VIBES Deep Forensics Active:</strong> Showing line-range file attribution (<code>VIBES v1.1</code>), Ed25519 DSSE &amp; high-assurance attestation coverage (<code>VERIFY v1.0</code>), PRISM risk distribution &amp; trajectory (<code>PRISM v1.0</code>), content-addressed reasoning &amp; decisions (<code>EVOLVE v1.0</code>), and TRACE incident response (<code>TRACE v1.0</code>).';
+      if(abody)abody.style.display='block';
+      if(abar)abar.style.display='none';
     }else{
       chip.className='chip warn';
-      chip.textContent='○ Standard Telemetry Mode (.ai-audit/ Not Detected in '+(wsKey||'Workspace')+')';
-      dbtn.textContent='Preview Full VIBES (.ai-audit/) Forensics';
-      exp.innerHTML='<strong>Standard NeckBeard Telemetry Active:</strong> You have full access to session cost, prompt-cache economics, guard blocks, and <code>.neckbeard.json</code> trust boundaries below. Initialize <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> with <code>vibecheck init</code> + <code>vibes install-hooks</code> (or click <em>Preview Full VIBES Forensics</em>) to unlock cryptographic file attribution, PRISM risk trajectories, EVOLVE decision ledgers, and TRACE incident forensics.';
-      awrap.style.display='none';
+      chip.textContent='○ .ai-audit/ Not Initialized in '+(wsKey||'Workspace');
+      dbtn.textContent='Preview Reference VIBES Forensics';
+      exp.innerHTML='<strong>Standard Telemetry Active for '+(wsKey||'Workspace')+':</strong> Economics, cache ROI, trust boundaries, and session logs are active above and below. Initialize <strong><a href="https://www.itsavibe.ai" target="_blank" rel="noopener">VIBES (.ai-audit/)</a></strong> to add cryptographic file attribution and PRISM risk scoring.';
+      if(abody)abody.style.display='none';
       if(abar)abar.style.display='flex';
+      return;
     }
-    var av=v||{annotationsCount:0,verifiedCount:0,blobsCount:0,attestationsCount:0,iocRulesCount:0,maxPrismRisk:0,highRiskCount:0,traceIncidents:0,traceResolved:0,decisions:0,filesTouchedCount:0,prismBuckets:{low:0,moderate:0,high:0,critical:0},fileHotspots:[],decisionRecords:[],incidentRecords:[],recentAnnotations:[]};
-    var ac=av.annotationsCount||0,vp=ac>0?Math.round(((av.verifiedCount||0)/ac)*100):0;
-    el('vp-prov').textContent=ac+' annotations';
-    el('vp-prov-sub').textContent=(av.blobsCount||0)+' SHA-256 blobs · '+(av.filesTouchedCount||0)+' files';
+    var ac=v.annotationsCount||0,vp=ac>0?Math.round(((v.verifiedCount||0)/ac)*100):0;
+    el('vp-prov').textContent=ac.toLocaleString()+' annotations';
+    el('vp-prov-sub').textContent=(v.blobsCount||0).toLocaleString()+' SHA-256 blobs · '+(v.filesTouchedCount||0)+' files';
     el('vp-verify').textContent=vp+'% verified';
-    el('vp-verify-sub').textContent=(av.attestationsCount||0)+' DSSE attestations · Guard locked';
-    el('vp-prism').textContent=Number(av.maxPrismRisk||0).toFixed(2)+' max risk';
-    el('vp-prism-sub').textContent=(av.highRiskCount||0)+' High/Critical (>= 0.60)';
-    el('vp-evolve').textContent=(av.decisions||0)+' decisions';
-    el('vp-evolve-sub').textContent='Cross-checked by /neckbeard-debt';
-    el('vp-trace').textContent=(av.traceResolved||0)+' / '+(av.traceIncidents||0)+' fixed';
-    el('vp-trace-sub').textContent=(av.iocRulesCount||0)+' custom IoC rules in iocs.d/';
+    el('vp-verify-sub').textContent=(v.attestationsCount||0).toLocaleString()+' attestations · Guard locked';
+    el('vp-prism').textContent=Number(v.maxPrismRisk||0).toFixed(2)+' max risk';
+    el('vp-prism-sub').textContent=(v.highRiskCount||0)+' High/Critical (>= 0.60)';
+    el('vp-evolve').textContent=(v.decisions||0)+' decisions';
+    el('vp-evolve-sub').textContent='+'+(v.linesAdded||0).toLocaleString()+' / -'+(v.linesRemoved||0).toLocaleString()+' attributed LOC';
+    el('vp-trace').textContent=(v.traceResolved||0)+' / '+(v.traceIncidents||0)+' fixed';
+    el('vp-trace-sub').textContent=(v.iocRulesCount||0)+' custom IoC rules in iocs.d/';
     var vbox=el('vibes-svg');
     if(vbox){
       vbox.textContent='';var NS='http://www.w3.org/2000/svg';
       function node(t,a,p,txt){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,a[k]);if(txt!=null)n.textContent=String(txt);if(p)p.appendChild(n);return n}
       node('text',{x:16,y:22,fill:'#06b6d4','font-size':11.5,'font-weight':700,'font-family':'monospace'},vbox,'1. PRISM v1.0 RISK HISTOGRAM');
-      var pb=av.prismBuckets||{},bks=[['Low (<0.30)',pb.low||0,'#10b981'],['Mod (0.30-0.59)',pb.moderate||0,'#06b6d4'],['High (0.60-0.79)',pb.high||0,'#f59e0b'],['Crit (>=0.80)',pb.critical||0,'#ef4444']];
+      var pb=v.prismBuckets||{},bks=[['Low (<0.30)',pb.low||0,'#10b981'],['Mod (0.30-0.59)',pb.moderate||0,'#06b6d4'],['High (0.60-0.79)',pb.high||0,'#f59e0b'],['Crit (>=0.80)',pb.critical||0,'#ef4444']];
       var mb=Math.max(1,pb.low||0,pb.moderate||0,pb.high||0,pb.critical||0);
       bks.forEach(function(b,idx){
         var y=46+idx*46;
@@ -479,51 +539,52 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
       var gy=38+Math.round((1-0.6)*162)+10;
       node('line',{x1:326,y1:gy,x2:589,y2:gy,stroke:'#f59e0b','stroke-dasharray':'3,3','stroke-width':1.2},vbox);
       node('text',{x:332,y:gy-5,fill:'#f59e0b','font-size':9.5,'font-family':'monospace'},vbox,'0.60 /neckbeard-review priority gate');
-      var anns=(av.recentAnnotations&&av.recentAnnotations.length)?av.recentAnnotations.slice(0,10).reverse():[];
+      var anns=(v.recentAnnotations&&v.recentAnnotations.length)?v.recentAnnotations.slice(0,12).reverse():[];
       if(anns.length>0){
         var pts=[];
         anns.forEach(function(a,idx){
-          var r=typeof a.riskScore==='number'?a.riskScore:0.18;
-          var px=342+Math.round((idx/Math.max(1,anns.length-1))*230);
+          var r=typeof a.riskScore==='number'?a.riskScore:0.12;
+          var px=340+Math.round((idx/Math.max(1,anns.length-1))*235);
           var py=48+Math.round((1-Math.min(1,Math.max(0,r)))*156);
           pts.push(px+','+py);
           node('circle',{cx:px,cy:py,r:4,fill:r>=0.8?'#ef4444':r>=0.6?'#f59e0b':'#10b981'},vbox);
         });
         if(pts.length>1)node('polyline',{points:pts.join(' '),fill:'none',stroke:'#06b6d4','stroke-width':1.8},vbox);
-      }else{
-        node('text',{x:338,y:140,fill:'#55665c','font-size':10.5,'font-family':'monospace'},vbox,'(Click Preview above to plot PRISM curve)');
       }
       node('line',{x1:612,y1:12,x2:612,y2:240,stroke:'#1d2b23','stroke-dasharray':'4,4'},vbox);
       node('text',{x:626,y:22,fill:'#10b981','font-size':11.5,'font-weight':700,'font-family':'monospace'},vbox,'3. ATTRIBUTED FILE HOTSPOTS');
-      var hs=(av.fileHotspots&&av.fileHotspots.length)?av.fileHotspots.slice(0,5):[{file:'(No .ai-audit/ in workspace)',annotations:0,linesAdded:0,linesRemoved:0,maxRisk:0,verified:false}];
+      var hs=(v.fileHotspots&&v.fileHotspots.length)?v.fileHotspots.slice(0,5):[{file:'(Session-level provenance only)',annotations:ac,linesAdded:0,linesRemoved:0,maxRisk:v.maxPrismRisk||0,verified:true}];
       hs.forEach(function(h,idx){
         var y=44+idx*39,rc=h.maxRisk>=0.8?'#ef4444':h.maxRisk>=0.6?'#f59e0b':h.maxRisk>=0.3?'#06b6d4':'#10b981';
-        node('text',{x:626,y:y+13,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},vbox,(h.verified?'✓ ':'○ ')+h.file.slice(0,22));
-        node('rect',{x:785,y:y+2,width:70,height:13,rx:4,fill:'#101814',stroke:'#1d2b23'},vbox);
-        var rw=Math.max(3,Math.round(Math.min(1,h.maxRisk||0)*70));
-        if(h.maxRisk>0)node('rect',{x:785,y:y+2,width:rw,height:13,rx:4,fill:rc},vbox);
-        node('text',{x:862,y:y+12,fill:rc,'font-size':10,'font-weight':700,'font-family':'monospace'},vbox,Number(h.maxRisk||0).toFixed(2)+' (+'+h.linesAdded+'/-'+h.linesRemoved+')');
+        node('text',{x:626,y:y+13,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},vbox,(h.verified?'✓ ':'○ ')+h.file.slice(-24));
+        node('rect',{x:790,y:y+2,width:65,height:13,rx:4,fill:'#101814',stroke:'#1d2b23'},vbox);
+        var rw=Math.max(4,Math.round(Math.min(1,Math.max(0.08,h.maxRisk||0.08))*65));
+        node('rect',{x:790,y:y+2,width:rw,height:13,rx:4,fill:rc},vbox);
+        node('text',{x:862,y:y+12,fill:rc,'font-size':10,'font-weight':700,'font-family':'monospace'},vbox,'+'+h.linesAdded+'/-'+h.linesRemoved);
       });
     }
     var dl=el('vibes-decisions-list');dl.textContent='';
-    var ds=(av.decisionRecords&&av.decisionRecords.length)?av.decisionRecords:[{id:'GUARD',title:'Immutable .ai-audit/{manifest.json,annotations.jsonl,blobs/,attestations/} protected by hooks/guard.js',status:'armed'}];
+    var ds=(v.decisionRecords&&v.decisionRecords.length)?v.decisionRecords:[{id:'GUARD',title:'Immutable .ai-audit/{manifest.json,annotations.jsonl,blobs/,attestations/} protected by hooks/guard.js',status:'armed'}];
     ds.slice(0,6).forEach(function(d){var r=document.createElement('div');r.textContent='['+d.id+'] '+d.title+' ('+d.status+')';dl.appendChild(r)});
     var il=el('vibes-incidents-list');il.textContent='';
-    var is=(av.incidentRecords&&av.incidentRecords.length)?av.incidentRecords:[{iocId:'READY',status:'clean',summary:'0 unresolved TRACE incidents or unverified high-risk PRISM edits'}];
+    var is=(v.incidentRecords&&v.incidentRecords.length)?v.incidentRecords:[{iocId:'READY',status:'clean',summary:'0 unresolved TRACE incidents or unverified high-risk PRISM edits in '+(wsKey||'portfolio')}];
     is.slice(0,6).forEach(function(inc){var r=document.createElement('div');r.textContent='['+inc.iocId+' · '+inc.status.toUpperCase()+'] '+inc.summary;il.appendChild(r)});
     var ar=el('vibes-annotations-rows');
     if(ar){
       ar.textContent='';
-      (av.recentAnnotations||[]).slice(0,10).forEach(function(a){
-        var tr=document.createElement('tr'),rt=a.riskScore!=null?a.riskScore.toFixed(2):'–';
-        [a.timestamp||'–',a.sessionId||'–',a.file||'–','+'+(a.linesAdded||0)+' / -'+(a.linesRemoved||0),'PRISM '+rt,a.verified?'✓ DSSE Verified':'○ Unattested',a.summary||'Annotated turn'].forEach(function(val,idx){
+      (v.recentAnnotations||[]).slice(0,12).forEach(function(a){
+        var tr=document.createElement('tr'),rt=a.riskScore!=null?a.riskScore.toFixed(2):'0.00';
+        [a.timestamp||'–',a.sessionId||'–',a.file||'–','+'+(a.linesAdded||0)+' / -'+(a.linesRemoved||0),'PRISM '+rt,a.verified?'✓ Attested':'○ Recorded',a.summary||'Annotated turn'].forEach(function(val,idx){
           var td=document.createElement('td');if(idx===6)td.className='tcol';td.textContent=val;tr.appendChild(td);
         });
         ar.appendChild(tr);
       });
     }
   }
-  function renderEcon(list){
+  function renderEcon(list,wsStats){
+    el('econ-title').textContent=activeWorkspace?('Workspace Economics & Benchmark vs. All Workspaces — '+activeWorkspace):'Front-and-Center Economics: Spend vs. Prompt-Cache Savings & All-Workspaces Ranking';
+    el('econ-badge').textContent=activeWorkspace?(activeWorkspace+': '+fmtUsd(wsStats.cost)+' ('+(portStats.cost>0?((wsStats.cost/portStats.cost)*100).toFixed(1):'0')+'% of '+fmtUsd(portStats.cost)+' total)'):('Portfolio Total: '+fmtUsd(portStats.cost)+' Spend · '+fmtUsd(portStats.saved)+' Saved by Cache');
+    el('model-table-title').textContent=activeWorkspace?('MODEL & CACHE ECONOMICS — '+activeWorkspace.toUpperCase()):'MODEL & CACHE ECONOMICS — ALL WORKSPACES';
     var vbox=el('velocity-svg');
     if(vbox){
       vbox.textContent='';var NS='http://www.w3.org/2000/svg';
@@ -531,56 +592,102 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
       var byDay={};
       list.forEach(function(r){
         var d=String(r.timestampIso||'').slice(0,10)||'Recent';
-        if(!byDay[d])byDay[d]={day:d,cost:0,sessions:0,cRead:0,tIn:0};
-        byDay[d].cost+=r.totalCostUsd||0;byDay[d].sessions+=1;
-        var tb=r.tokenBuckets||{};
-        byDay[d].cRead+=tb.cachedReadTokens||0;
-        byDay[d].tIn+=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
+        if(!byDay[d])byDay[d]={day:d,cost:0,saved:0,sessions:0};
+        byDay[d].cost+=r.totalCostUsd||0;byDay[d].saved+=estSaved(r);byDay[d].sessions+=1;
       });
-      var days=Object.keys(byDay).sort().slice(-14);
-      node('text',{x:18,y:22,fill:'#10b981','font-size':12,'font-weight':700,'font-family':'monospace'},vbox,'14-DAY API SPEND ($), SESSION ACTIVITY & PROMPT CACHE EFFICIENCY');
-      var mc=0.01;days.forEach(function(d){if(byDay[d].cost>mc)mc=byDay[d].cost});
+      var days=Object.keys(byDay).sort().slice(-10);
+      node('text',{x:16,y:20,fill:'#10b981','font-size':11.5,'font-weight':700,'font-family':'monospace'},vbox,'1. DAILY SPEND ($ EMERALD) VS. CACHE SAVED ($ CYAN) — '+(activeWorkspace||'ALL WORKSPACES'));
+      var mv=0.01;days.forEach(function(d){if(byDay[d].cost>mv)mv=byDay[d].cost;if(byDay[d].saved>mv)mv=byDay[d].saved});
       days.forEach(function(d,idx){
-        var inf=byDay[d],x=28+idx*65,bh=Math.max(6,Math.round((inf.cost/mc)*118)),y=166-bh;
-        node('rect',{x:x,y:y,width:38,height:bh,rx:5,fill:'#10b981'},vbox);
-        node('text',{x:x+19,y:y-6,fill:'#ecf3ef','font-size':9.5,'text-anchor':'middle','font-family':'monospace'},vbox,'$'+inf.cost.toFixed(0));
-        node('text',{x:x+19,y:184,fill:'#8b9d92','font-size':9.5,'text-anchor':'middle','font-family':'monospace'},vbox,d.slice(5));
-        var ch=inf.tIn>0?Math.round((inf.cRead/inf.tIn)*100):0;
-        node('text',{x:x+19,y:198,fill:'#06b6d4','font-size':9,'text-anchor':'middle','font-family':'monospace'},vbox,ch+'% cache');
+        var inf=byDay[d],gx=20+idx*45,hc=Math.max(4,Math.round((inf.cost/mv)*140)),hs=Math.max(4,Math.round((inf.saved/mv)*140));
+        node('rect',{x:gx,y:185-hc,width:15,height:hc,rx:3,fill:'#10b981'},vbox);
+        node('rect',{x:gx+17,y:185-hs,width:15,height:hs,rx:3,fill:'#06b6d4'},vbox);
+        node('text',{x:gx+16,y:202,fill:'#8b9d92','font-size':9,'text-anchor':'middle','font-family':'monospace'},vbox,d.slice(5));
+        node('text',{x:gx+16,y:216,fill:'#10b981','font-size':8.5,'text-anchor':'middle','font-family':'monospace'},vbox,'$'+inf.cost.toFixed(0));
       });
+      node('line',{x1:480,y1:10,x2:480,y2:225,stroke:'#1d2b23','stroke-dasharray':'4,4'},vbox);
+      if(activeWorkspace){
+        node('text',{x:498,y:20,fill:'#06b6d4','font-size':11.5,'font-weight':700,'font-family':'monospace'},vbox,'2. '+activeWorkspace.toUpperCase()+' (EMERALD) VS. ALL-WORKSPACES AVG (SLATE)');
+        [
+          ['Cost / Session',wsStats.costPerSession,portStats.costPerSession,function(v){return '$'+v.toFixed(2)}],
+          ['Cost / Turn',wsStats.costPerTurn,portStats.costPerTurn,function(v){return '$'+v.toFixed(2)}],
+          ['Cache Hit Rate',wsStats.cacheHitPct,portStats.cacheHitPct,function(v){return Math.round(v)+'%'}],
+          ['Turns / Session',wsStats.turnsPerSession,portStats.turnsPerSession,function(v){return v.toFixed(1)+'t'}]
+        ].forEach(function(m,idx){
+          var y=44+idx*45,mx=Math.max(0.01,m[1],m[2]),wW=Math.max(6,Math.round((m[1]/mx)*190)),wA=Math.max(6,Math.round((m[2]/mx)*190));
+          node('text',{x:498,y:y+12,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},vbox,m[0]);
+          node('rect',{x:625,y:y,width:wW,height:11,rx:3,fill:'#10b981'},vbox);
+          node('text',{x:632+wW,y:y+10,fill:'#10b981','font-size':10,'font-weight':700,'font-family':'monospace'},vbox,activeWorkspace.slice(0,12)+': '+m[3](m[1]));
+          node('rect',{x:625,y:y+15,width:wA,height:10,rx:3,fill:'#55665c'},vbox);
+          node('text',{x:632+wA,y:y+24,fill:'#8b9d92','font-size':9.5,'font-family':'monospace'},vbox,'All Avg: '+m[3](m[2]));
+        });
+      }else{
+        node('text',{x:498,y:20,fill:'#f59e0b','font-size':11.5,'font-weight':700,'font-family':'monospace'},vbox,'2. TOP WORKSPACES BY SPEND & PROMPT-CACHE EFFICIENCY');
+        var rTop={};
+        records.forEach(function(r){
+          var p=r.projectName||'workspace';
+          if(!rTop[p])rTop[p]={name:p,cost:0,cRead:0,tIn:0};
+          rTop[p].cost+=r.totalCostUsd||0;
+          var tb=r.tokenBuckets||{};rTop[p].cRead+=tb.cachedReadTokens||0;rTop[p].tIn+=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
+        });
+        var tList=Object.values(rTop).sort(function(a,b){return b.cost-a.cost}).slice(0,6);
+        var mRC=Math.max(0.01,(tList[0]&&tList[0].cost)||1);
+        tList.forEach(function(rp,idx){
+          var y=42+idx*31,bw=Math.max(6,Math.round((rp.cost/mRC)*185)),ch=rp.tIn>0?Math.round((rp.cRead/rp.tIn)*100):0;
+          node('text',{x:498,y:y+13,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},vbox,rp.name.slice(0,18));
+          node('rect',{x:635,y:y+1,width:bw,height:15,rx:4,fill:'#10b981'},vbox);
+          node('text',{x:642+bw,y:y+13,fill:'#ecf3ef','font-size':10,'font-weight':700,'font-family':'monospace'},vbox,fmtUsd(rp.cost)+' ('+ch+'% cache)');
+        });
+      }
     }
     var rMap={};
     records.forEach(function(r){
       var p=r.projectName||'workspace';
-      if(!rMap[p])rMap[p]={name:p,sessions:0,dur:0,cost:0,cRead:0,tIn:0};
-      rMap[p].sessions+=1;rMap[p].dur+=r.activeDurationMs||0;rMap[p].cost+=r.totalCostUsd||0;
-      var tb=r.tokenBuckets||{};
-      rMap[p].cRead+=tb.cachedReadTokens||0;
-      rMap[p].tIn+=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
+      if(!rMap[p])rMap[p]={name:p,sessions:0,turns:0,dur:0,cost:0,saved:0,cRead:0,tIn:0};
+      rMap[p].sessions+=1;rMap[p].turns+=r.turnCount||1;rMap[p].dur+=r.activeDurationMs||0;rMap[p].cost+=r.totalCostUsd||0;rMap[p].saved+=estSaved(r);
+      var tb=r.tokenBuckets||{};rMap[p].cRead+=tb.cachedReadTokens||0;rMap[p].tIn+=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
     });
     var rRows=el('repo-scorecard-rows');
     if(rRows){
       rRows.textContent='';
-      Object.values(rMap).sort(function(a,b){return b.cost-a.cost}).slice(0,25).forEach(function(rp){
-        var tr=document.createElement('tr');tr.className='crow';
-        var ch=rp.tIn>0?Math.round((rp.cRead/rp.tIn)*100)+'%':'0%',wm=meta[rp.name]||{};
-        var st=(wm.vibes&&wm.vibes.present?'● VIBES':'○ Std')+(wm.load?' · '+wm.load.slice(0,14):'');
-        [rp.name,String(rp.sessions),fmtDur(rp.dur),ch,'$'+rp.cost.toFixed(2),st].forEach(function(v,idx){
+      var bTr=document.createElement('tr');
+      bTr.className='crow brow'+(activeWorkspace===''?' srow':'');
+      ['★ ALL WORKSPACES ('+Object.keys(rMap).length+')',portStats.sessions+' / '+portStats.turns,fmtDur(portStats.dur),portStats.cacheHitPct+'%',fmtUsd(portStats.saved),fmtUsd(portStats.cost),'100.0%','Portfolio'].forEach(function(v,idx){
+        var td=document.createElement('td');if(idx===0)td.className='tcol';td.textContent=v;bTr.appendChild(td);
+      });
+      bTr.onclick=function(){selectWs('')};
+      rRows.appendChild(bTr);
+      Object.values(rMap).sort(function(a,b){
+        if(activeWorkspace&&a.name===activeWorkspace)return -1;
+        if(activeWorkspace&&b.name===activeWorkspace)return 1;
+        return b.cost-a.cost;
+      }).slice(0,45).forEach(function(rp){
+        var tr=document.createElement('tr');
+        tr.className='crow'+(rp.name===activeWorkspace?' srow':'');
+        var ch=rp.tIn>0?Math.round((rp.cRead/rp.tIn)*100)+'%':'0%';
+        var sh=portStats.cost>0?(rp.cost/portStats.cost)*100:0;
+        var wm=meta[rp.name]||{},st=(wm.vibes&&wm.vibes.present?'● VIBES':'○ Std');
+        [(rp.name===activeWorkspace?'▶ ':'')+rp.name,rp.sessions+' / '+rp.turns,fmtDur(rp.dur),ch,fmtUsd(rp.saved),fmtUsd(rp.cost)].forEach(function(v,idx){
           var td=document.createElement('td');if(idx===0)td.className='tcol';td.textContent=v;tr.appendChild(td);
         });
-        tr.onclick=function(){activeWorkspace=rp.name;render()};
+        var sTd=document.createElement('td');
+        sTd.innerHTML='<span class="sb-w"><span class="sb-bg"><span class="sb-f" style="width:'+Math.min(100,Math.max(3,sh)).toFixed(0)+'%"></span></span><span>'+sh.toFixed(1)+'%</span></span>';
+        tr.appendChild(sTd);
+        var vTd=document.createElement('td');vTd.textContent=st;tr.appendChild(vTd);
+        tr.onclick=function(){selectWs(rp.name)};
         rRows.appendChild(tr);
       });
     }
     var mMap={};
     list.forEach(function(r){
       var m=r.modelId||'unknown';
-      if(!mMap[m])mMap[m]={model:m,sessions:0,turns:0,inTok:0,outTok:0,cRead:0,cost:0};
+      if(!mMap[m])mMap[m]={model:m,sessions:0,turns:0,inTok:0,outTok:0,cRead:0,saved:0,cost:0};
       mMap[m].sessions+=1;mMap[m].turns+=r.turnCount||1;
       var tb=r.tokenBuckets||{};
       mMap[m].inTok+=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
       mMap[m].outTok+=tb.completionTokens||0;
       mMap[m].cRead+=tb.cachedReadTokens||0;
+      mMap[m].saved+=estSaved(r);
       mMap[m].cost+=r.totalCostUsd||0;
     });
     var mRows=el('model-econ-rows');
@@ -588,100 +695,119 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
       mRows.textContent='';
       Object.values(mMap).sort(function(a,b){return b.cost-a.cost}).forEach(function(mm){
         var tr=document.createElement('tr'),ch=mm.inTok>0?Math.round((mm.cRead/mm.inTok)*100)+'%':'0%';
-        [mm.model,mm.sessions+' / '+mm.turns,fmtTok(mm.inTok),fmtTok(mm.outTok),ch,'$'+mm.cost.toFixed(2)].forEach(function(v){
+        [mm.model,mm.sessions+' / '+mm.turns,fmtTok(mm.inTok),fmtTok(mm.outTok),ch,fmtUsd(mm.saved),fmtUsd(mm.cost)].forEach(function(v){
           var td=document.createElement('td');td.textContent=v;tr.appendChild(td);
         });
         mRows.appendChild(tr);
       });
     }
   }
+  function resolveBounds(wsKey){
+    if(wsKey){var wm=meta[wsKey]||{};return{boundaries:wm.boundaries||{external:{},internal:{}},drift:wm.driftAdded||[]}}
+    var aE={ingress:[],egress:[],supply:[]},aI={auth:[],data:[],exec:[],ai:[]},aD=[];
+    Object.keys(meta).forEach(function(k){
+      var wm=meta[k]||{},b=wm.boundaries||{},e=b.external||{},i=b.internal||{};
+      ['ingress','egress','supply'].forEach(function(c){(e[c]||[]).forEach(function(it){if(aE[c].length<12)aE[c].push(k+':'+it)})});
+      ['auth','data','exec','ai'].forEach(function(c){(i[c]||[]).forEach(function(it){if(aI[c].length<12)aI[c].push(k+':'+it)})});
+      (wm.driftAdded||[]).forEach(function(d){aD.push(k+':'+d)});
+    });
+    return{boundaries:{external:aE,internal:aI},drift:aD};
+  }
   function renderGraph(wsKey){
+    el('topo-heading').textContent=wsKey?('External → Internal Trust-Boundary Graph — '+wsKey):'External → Internal Trust-Boundary Graph — All Workspaces';
     var box=el('boundary-svg');if(!box)return;box.textContent='';
     var NS='http://www.w3.org/2000/svg';
-    function node(t,a,p,txt){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,a[k]);if(txt!=null)n.textContent=txt;if(p)p.appendChild(n);return n}
-    var key=wsKey||Object.keys(meta)[0]||'',wm=meta[key]||{},b=wm.boundaries||{external:{},internal:{}},ext=b.external||{},int=b.internal||{},drift=wm.driftAdded||[];
+    function node(t,a,p,txt){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,String(a[k]));if(txt!=null)n.textContent=String(txt);if(p)p.appendChild(n);return n}
+    var res=resolveBounds(wsKey),ext=res.boundaries.external||{},int=res.boundaries.internal||{},drift=res.drift||[];
     var db=el('ov-drift');
-    if(drift.length){db.className='chip warn';db.textContent='⚠ +'+drift.length+' Unreviewed Boundary Drift: '+drift.join(', ')}
-    else{db.className='chip';db.textContent='✓ Trust Boundaries Match Saved .neckbeard.json'}
+    if(drift.length){db.className='chip warn';db.textContent='⚠ +'+drift.length+' Unreviewed Boundary Drift: '+drift.slice(0,3).join(', ')}
+    else{db.className='chip';db.textContent='✓ Trust Boundaries Match Saved .neckbeard.json ('+(wsKey||'Portfolio')+')'}
     node('rect',{x:420,y:12,width:120,height:336,rx:14,fill:'#0e1913',stroke:'#10b981','stroke-dasharray':'6,4'},box);
-    node('text',{x:480,y:162,fill:'#10b981','font-size':12,'font-weight':800,'text-anchor':'middle','font-family':'monospace'},box,'TRUST');
-    node('text',{x:480,y:180,fill:'#10b981','font-size':12,'font-weight':800,'text-anchor':'middle','font-family':'monospace'},box,'BOUNDARY');
-    node('text',{x:480,y:202,fill:'#8b9d92','font-size':10,'text-anchor':'middle','font-family':'monospace'},box,'Fail Closed · Object Auth');
+    node('text',{x:480,y:156,fill:'#10b981','font-size':12,'font-weight':800,'text-anchor':'middle','font-family':'monospace'},box,'TRUST');
+    node('text',{x:480,y:174,fill:'#10b981','font-size':12,'font-weight':800,'text-anchor':'middle','font-family':'monospace'},box,'BOUNDARY');
+    node('text',{x:480,y:196,fill:'#8b9d92','font-size':9.5,'text-anchor':'middle','font-family':'monospace'},box,wsKey||'All Workspaces');
     [['External Ingress (HTTP/CLI/Webhook)',ext.ingress||[],'#f59e0b'],['External Egress (Outbound / SSRF)',ext.egress||[],'#06b6d4'],['Supply Chain & CI Workflows',ext.supply||[],'#a855f7']].forEach(function(g,i){
       var y=20+i*112;
       node('rect',{x:16,y:y,width:340,height:92,rx:12,fill:'#0b110e',stroke:g[2]},box);
-      node('text',{x:30,y:y+24,fill:g[2],'font-size':12.5,'font-weight':700,'font-family':'monospace'},box,g[0]+' ('+g[1].length+')');
-      (g[1].length?g[1].slice(0,3):['(no sinks matched)']).forEach(function(it,j){node('text',{x:30,y:y+45+j*15,fill:'#ecf3ef','font-size':11,'font-family':'monospace'},box,it)});
+      node('text',{x:30,y:y+24,fill:g[2],'font-size':12,'font-weight':700,'font-family':'monospace'},box,g[0]+' ('+g[1].length+')');
+      (g[1].length?g[1].slice(0,3):['(no sinks matched in '+(wsKey||'workspace')+')']).forEach(function(it,j){node('text',{x:30,y:y+45+j*15,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},box,it.slice(0,44))});
       node('path',{d:'M356,'+(y+46)+' C390,'+(y+46)+' 390,180 420,180',fill:'none',stroke:g[2],'stroke-width':1.6},box);
     });
     [['Internal Auth & Object Ownership',int.auth||[],'#10b981'],['Internal Data & Storage (SQL/FS)',int.data||[],'#2dd4bf'],['Internal Execution & Crypto',int.exec||[],'#fb7185'],['Internal AI & Prompt Context',int.ai||[],'#facc15']].forEach(function(g,i){
       var y=14+i*84;
       node('rect',{x:604,y:y,width:340,height:72,rx:12,fill:'#0b110e',stroke:g[2]},box);
-      node('text',{x:618,y:y+21,fill:g[2],'font-size':12,'font-weight':700,'font-family':'monospace'},box,g[0]+' ('+g[1].length+')');
-      (g[1].length?g[1].slice(0,2):['(no sinks matched)']).forEach(function(it,j){node('text',{x:618,y:y+40+j*15,fill:'#ecf3ef','font-size':11,'font-family':'monospace'},box,it)});
+      node('text',{x:618,y:y+21,fill:g[2],'font-size':11.5,'font-weight':700,'font-family':'monospace'},box,g[0]+' ('+g[1].length+')');
+      (g[1].length?g[1].slice(0,2):['(no sinks matched in '+(wsKey||'workspace')+')']).forEach(function(it,j){node('text',{x:618,y:y+40+j*15,fill:'#ecf3ef','font-size':10.5,'font-family':'monospace'},box,it.slice(0,44))});
       node('path',{d:'M540,180 C572,180 572,'+(y+36)+' 604,'+(y+36),fill:'none',stroke:g[2],'stroke-width':1.6},box);
     });
   }
   function render(){
     var list=activeWorkspace?records.filter(function(r){return r.projectName===activeWorkspace}):records;
-    var key=activeWorkspace||Object.keys(meta)[0]||'',wm=meta[key]||{};
+    var wsStats=sumList(list),wm=activeWorkspace?(meta[activeWorkspace]||{}):{},vData=resolveVibes(activeWorkspace);
     el('st-title').textContent=activeWorkspace||'All Workspaces';
-    el('st-subtitle').textContent=list.length+' recorded session(s) · Load envelope: '+(wm.load||'unset (/neckbeard load <params>)');
-    el('pane-vibes').style.display=(activeView==='overview'||activeView==='vibes')?'block':'none';
+    var bBtn=el('back-all-btn');if(bBtn)bBtn.style.display=activeWorkspace?'inline-block':'none';
+    var vPill=el('st-vibes-pill');
+    if(vPill){
+      if(vData&&vData.present){vPill.style.display='inline-block';vPill.className='chip cyan';vPill.textContent='● VIBES (.ai-audit/) Active'}
+      else{vPill.style.display='none'}
+    }
+    var shCost=portStats.cost>0?((wsStats.cost/portStats.cost)*100).toFixed(1):'100.0';
+    el('st-subtitle').textContent=activeWorkspace?(wsStats.sessions+' sessions · '+wsStats.turns+' turns · '+fmtUsd(wsStats.cost)+' ('+shCost+'% of all workspaces) · Load target: '+(wm.load||'unset')):(portStats.sessions+' total sessions across '+el('ws-total-cnt').textContent+' workspaces · '+fmtUsd(portStats.cost)+' total spend · '+fmtUsd(portStats.saved)+' saved by prompt caching');
     el('pane-economics').style.display=(activeView==='overview'||activeView==='economics')?'block':'none';
+    el('pane-vibes').style.display=(activeView==='overview'||activeView==='vibes')?'block':'none';
     el('pane-overview').style.display=(activeView==='overview'||activeView==='topology')?'block':'none';
     el('pane-forensics').style.display=(activeView==='overview'||activeView==='forensics')?'block':'none';
-    var cost=0,tok=0,cRead=0,inAll=0,dur=0,turns=0,ins=0,del=0,blk=0,found=0,fixed=0,reused=0,created=0;
-    list.forEach(function(r){
-      cost+=r.totalCostUsd||0;var tb=r.tokenBuckets||{};
-      var pT=tb.promptTokens||0,cT=tb.completionTokens||0,crT=tb.cachedReadTokens||0,cwT=tb.cachedWriteTokens||0;
-      tok+=pT+cT+crT+cwT;cRead+=crT;inAll+=pT+crT+cwT;dur+=r.activeDurationMs||0;turns+=r.turnCount||1;
-      ins+=r.linesInserted||0;del+=r.linesDeleted||0;blk+=r.guardBlockCount||0;
-      found+=r.securityFindingsTotal||0;fixed+=r.securityFindingsResolved||0;
-      reused+=r.reusedSymbolCount||0;created+=r.newSymbolCount||0;
-    });
-    el('m-loc').textContent='+'+ins+' / -'+del+' LOC';
-    var rPct=(reused+created)>0?Math.round((reused/(reused+created))*100)+'% symbol reuse':'Net code delta across '+list.length+' sessions';
-    el('m-reuse').textContent=rPct;
-    el('m-sec').textContent=blk+' guard blocks · '+fixed+'/'+found+' fixed';
-    el('m-vibes').textContent=wm.prismRisk!=null?('VIBES active · PRISM max risk '+wm.prismRisk+' · '+(wm.vibesDecisions||0)+' decisions'):'PreToolUse secret & VIBES provenance shield';
-    el('m-cost').textContent='$'+cost.toFixed(2)+' · '+fmtTok(tok)+' tok';
-    var cPct=inAll>0?Math.round((cRead/inAll)*100):0;
-    el('m-cache').textContent=cPct+'% prompt cache hit rate · '+turns.toLocaleString()+' turns';
-    el('m-time').textContent=fmtDur(dur);
+    el('m-cost').textContent=fmtUsd(wsStats.cost);
+    el('m-cost-unit').textContent=fmtUsd(wsStats.costPerSession)+' / session · '+fmtUsd(wsStats.costPerTurn)+' / turn';
+    el('m-cost-comp').textContent=activeWorkspace?(shCost+'% of All Workspaces ('+fmtUsd(portStats.cost)+') · All Avg: '+fmtUsd(portStats.costPerSession)+'/sess'):('100% of portfolio ('+portStats.sessions.toLocaleString()+' sessions)');
+    el('m-saved').textContent=fmtUsd(wsStats.saved)+' saved';
+    el('m-cache').textContent=wsStats.cacheHitPct+'% cache hit · '+fmtTok(wsStats.tok)+' total tok';
+    el('m-cache-comp').textContent=activeWorkspace?('All-Workspaces avg cache hit: '+portStats.cacheHitPct+'% ('+fmtUsd(portStats.saved)+' total saved)'):(fmtTok(portStats.cRead)+' cached read tokens across portfolio');
+    el('m-time').textContent=fmtDur(wsStats.dur);
+    var shTime=portStats.dur>0?((wsStats.dur/portStats.dur)*100).toFixed(1):'100.0';
+    el('m-turns').textContent=wsStats.sessions+' sessions · '+wsStats.turns.toLocaleString()+' turns ('+shTime+'% of time)';
     el('m-load').textContent='Target load: '+(wm.load||'unset (/neckbeard load <value>)');
+    var vIns=(vData&&vData.linesAdded)||wsStats.ins,vDel=(vData&&vData.linesRemoved)||wsStats.del;
+    el('m-sec').textContent=wsStats.blk+' guard blocks';
+    el('m-loc').textContent='+'+vIns.toLocaleString()+' / -'+vDel.toLocaleString()+' LOC · '+wsStats.fixed+'/'+wsStats.found+' issues fixed';
+    el('m-vibes').textContent=(vData&&vData.present)?('VIBES active · '+(vData.annotationsCount||0).toLocaleString()+' annotations · PRISM max '+Number(vData.maxPrismRisk||0).toFixed(2)):'PreToolUse secret & config-censor shield armed';
+    el('forensics-heading').textContent=activeWorkspace?('Recorded Engineering & Audit Sessions — '+activeWorkspace):'Recorded Engineering & Audit Sessions — All Workspaces';
     var searched=searchQuery?list.filter(function(r){var q=searchQuery.toLowerCase();return String(r.taskTitle||'').toLowerCase().includes(q)||String(r.projectName||'').toLowerCase().includes(q)||String(r.modelId||'').toLowerCase().includes(q)}):list;
     el('tbl-count').textContent=searched.length+' session(s)';
     var tbody=el('session-rows');tbody.textContent='';
     searched.slice().sort(function(a,b){return(b.startedAtMs||0)-(a.startedAtMs||0)}).slice(0,250).forEach(function(r){
       var tr=document.createElement('tr'),tb=r.tokenBuckets||{};
       var tTok=(tb.promptTokens||0)+(tb.completionTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
-      [r.taskTitle||'Session',r.projectName||'–',r.timestampIso||'–',(r.modelId||'claude')+' ['+(r.activeLevel||'full')+']',fmtDur(r.activeDurationMs),'$'+(r.totalCostUsd||0).toFixed(2)+' ('+fmtTok(tTok)+')',(r.reusePercent==null?'–':r.reusePercent+'%')+' (+'+(r.linesInserted||0)+'/-'+(r.linesDeleted||0)+')',(r.guardBlockCount||0)+' blk · '+(r.securityFindingsResolved||0)+'/'+(r.securityFindingsTotal||0)+(r.vibesMaxPrismRisk!=null?' · PRISM '+r.vibesMaxPrismRisk:''),r.testStatusLabel||'recorded'].forEach(function(v,idx){
+      var iTok=(tb.promptTokens||0)+(tb.cachedReadTokens||0)+(tb.cachedWriteTokens||0);
+      var cH=iTok>0?Math.round(((tb.cachedReadTokens||0)/iTok)*100):0,sv=estSaved(r);
+      [r.taskTitle||'Session',r.projectName||'–',r.timestampIso||'–',(r.modelId||'claude')+' ['+(r.activeLevel||'full')+']',fmtDur(r.activeDurationMs),fmtUsd(r.totalCostUsd||0)+' ('+fmtTok(tTok)+')',fmtUsd(sv)+' ('+cH+'%)',(r.guardBlockCount||0)+' blk · '+(r.securityFindingsResolved||0)+'/'+(r.securityFindingsTotal||0)+(r.vibesMaxPrismRisk!=null?' · PRISM '+r.vibesMaxPrismRisk:''),r.testStatusLabel||'recorded'].forEach(function(v,idx){
         var td=document.createElement('td');if(idx===0)td.className='tcol';td.textContent=v;tr.appendChild(td);
       });
       tbody.appendChild(tr);
     });
+    renderEcon(list,wsStats);
     renderVibes(activeWorkspace);
-    renderEcon(list);
     renderGraph(activeWorkspace);
   }
-  var dbtn=el('vibes-demo-btn');
-  if(dbtn){dbtn.onclick=function(){demoVibesMode=!demoVibesMode;render()}}
-  var sbox=el('session-search');
-  if(sbox){sbox.oninput=function(){searchQuery=sbox.value||'';render()}}
-  var wsNav=el('ws-list');
-  var names=Array.from(new Set(records.map(function(r){return r.projectName}).concat(Object.keys(meta)).filter(Boolean)));
+  var bAll=el('back-all-btn');if(bAll){bAll.onclick=function(){selectWs('')}}
+  var dbtn=el('vibes-demo-btn');if(dbtn){dbtn.onclick=function(){demoVibesMode=!demoVibesMode;render()}}
+  var sbox=el('session-search');if(sbox){sbox.oninput=function(){searchQuery=sbox.value||'';render()}}
+  var wsNav=el('ws-list'),wCost={},wCnt={};
+  records.forEach(function(r){var p=r.projectName||'';if(!p)return;wCost[p]=(wCost[p]||0)+(r.totalCostUsd||0);wCnt[p]=(wCnt[p]||0)+1});
+  var names=Array.from(new Set(Object.keys(wCnt).concat(Object.keys(meta)).filter(Boolean)));
   var tEl=el('ws-total-cnt');if(tEl)tEl.textContent=String(names.length);
-  [['','All Workspaces',records.length]].concat(names.map(function(n){return[n,n,records.filter(function(r){return r.projectName===n}).length]}).sort(function(a,b){return b[2]-a[2]})).forEach(function(it){
-    var b=document.createElement('button');b.type='button';b.className='ws-btn'+(it[0]===activeWorkspace?' active':'');
-    var s1=document.createElement('span');s1.textContent=it[1];
+  [['','All Workspaces',records.length,portStats.cost]].concat(names.map(function(n){return[n,n,wCnt[n]||0,wCost[n]||0]}).sort(function(a,b){return(b[3]-a[3])||(b[2]-a[2])})).forEach(function(it){
+    var b=document.createElement('button');b.type='button';b.setAttribute('data-ws',it[0]);
+    b.className='ws-btn'+(it[0]===activeWorkspace?' active':'');
+    var s1=document.createElement('span');s1.className='ws-ncol';s1.textContent=it[1];
     var rw=document.createElement('span');rw.className='ws-badges';
     if(it[0]&&meta[it[0]]&&meta[it[0]].vibes&&meta[it[0]].vibes.present){
       var vt=document.createElement('span');vt.className='ws-vtag';vt.textContent='VIBES';rw.appendChild(vt);
     }
+    var cs=document.createElement('span');cs.className='ws-ctag';cs.textContent='$'+Math.round(it[3]).toLocaleString();rw.appendChild(cs);
     var s2=document.createElement('span');s2.className='ws-cnt';s2.textContent=String(it[2]);
     rw.appendChild(s2);b.appendChild(s1);b.appendChild(rw);
-    b.onclick=function(){activeWorkspace=it[0];document.querySelectorAll('.ws-btn').forEach(function(x){x.classList.toggle('active',x===b)});render()};
+    b.onclick=function(){selectWs(it[0])};
     wsNav.appendChild(b);
   });
   document.querySelectorAll('[data-view]').forEach(function(b){
@@ -692,6 +818,23 @@ tr.crow{cursor:pointer}tr.crow:hover{background:rgba(16,185,129,.06)}
 </script>
 </body>
 </html>`;
+}
+
+function isProjectDirectory(wsPath) {
+  try {
+    if (!wsPath || wsPath === '/' || wsPath === os.homedir()) return false;
+    return (
+      fs.existsSync(path.join(wsPath, '.git')) ||
+      fs.existsSync(path.join(wsPath, '.neckbeard.json')) ||
+      fs.existsSync(path.join(wsPath, '.ai-audit')) ||
+      fs.existsSync(path.join(wsPath, 'package.json')) ||
+      fs.existsSync(path.join(wsPath, 'Cargo.toml')) ||
+      fs.existsSync(path.join(wsPath, 'pyproject.toml')) ||
+      fs.existsSync(path.join(wsPath, 'go.mod'))
+    );
+  } catch {
+    return false;
+  }
 }
 
 function collectAndBuild(cwd = process.cwd(), env = process.env) {
@@ -828,19 +971,28 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
   const allRecords = [...recordsById.values()];
   fs.writeFileSync(jsonlPath, allRecords.map((r) => JSON.stringify(r)).join('\n') + (allRecords.length ? '\n' : ''));
 
+  // Populate per-workspace boundary maps, load configs, and VIBES telemetry for all discovered project directories
   const workspacesMeta = {};
+  let boundaryScans = 0;
   for (const [projName, wsPath] of discoveredWorkspacePaths.entries()) {
     const isCurrent = projName === activeProject;
     const wsHasVibes = hasVibes(wsPath);
     const wsCfg = readProjectConfig(wsPath, env);
-    if (!isCurrent && !wsHasVibes && !wsCfg) continue;
+    const canScanBounds = isCurrent || (boundaryScans < 35 && isProjectDirectory(wsPath));
+    if (!isCurrent && !wsHasVibes && !wsCfg && !canScanBounds) continue;
+
+    let bounds = (wsCfg && wsCfg.boundaries) || null;
+    if (!bounds && canScanBounds) {
+      bounds = buildBoundaryMap(wsPath);
+      boundaryScans++;
+    }
     const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };
     const rawVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;
     const compactVibes = rawVibes ? { ...rawVibes, sessions: undefined } : null;
     workspacesMeta[projName] = {
       load: (wsCfg && wsCfg.load) || '',
       boundaryLoad: (wsCfg && wsCfg.boundaryLoad) || {},
-      boundaries: (wsCfg && wsCfg.boundaries) || (isCurrent ? buildBoundaryMap(wsPath) : { external: {}, internal: {} }),
+      boundaries: bounds || { external: {}, internal: {} },
       driftAdded: (wsDrift && wsDrift.added) || [],
       prismRisk: rawVibes ? rawVibes.maxPrismRisk : null,
       vibesDecisions: rawVibes ? rawVibes.decisions : 0,

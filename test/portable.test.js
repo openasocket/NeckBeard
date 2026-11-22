@@ -138,8 +138,13 @@ test('review, audit, and copilot instructions content', () => {
   assert.match(audit, /every single tracked code, configuration, script, workflow, and documentation file/i);
   assert.match(audit, /long time, consume a large number of tokens, and require many tool calls/i);
   assert.match(audit, /variant search/i);
-  assert.match(audit, /Say when you stopped/);
-  assert.match(audit, /Do not search past the findings in this report/);
+  assert.match(audit, /Never cap or hide findings/i);
+  assert.match(audit, /explicitly prompt the user/i);
+  assert.match(audit, /exceedingly rare/i);
+  assert.match(audit, /E_patch/);
+  assert.match(audit, /E_rewrite/);
+  assert.ok(!audit.includes('at most 20 findings'), 'neckbeard-audit must not cap findings at 20');
+  assert.ok(!audit.includes('Do not search past the findings in this report'), 'neckbeard-audit must not forbid searching past 20 findings');
   assert.match(audit, /doc promises/i);
   assert.ok(audit.includes('AGENTS.md'));
   assert.ok(audit.includes('CLAUDE.md'));

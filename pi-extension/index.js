@@ -76,7 +76,7 @@ export default function registerNeckbeardPi(host) {
     description: 'Configure NeckBeard level (lite|full|paranoid|off), load target, trust map, or git sharing',
     getArgumentCompletions: (prefix) => {
       const p = String(prefix || '').trimStart();
-      return [...LEVELS, 'off', 'status', 'map', 'share on', 'share off', 'load ']
+      return [...LEVELS, 'ultra', 'off', 'status', 'map', 'share on', 'share off', 'load ']
         .filter((opt) => opt.startsWith(p))
         .map((value) => ({ value, label: value }));
     },

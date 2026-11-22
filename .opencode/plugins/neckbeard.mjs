@@ -73,7 +73,7 @@ export default {
           description: 'Manage NeckBeard level, load target, trust-boundary map, git sharing, and telemetry',
           execute: async ({ prompt }) => {
             const parsed = parseCommand(`/neckbeard ${(prompt && prompt.text) || ''}`);
-            if (typeof parsed === 'string' && normalizeLevel(parsed)) sessionLevel = parsed;
+            if (typeof parsed === 'string' && normalizeLevel(parsed)) sessionLevel = normalizeLevel(parsed);
             else if (parsed === 'on') sessionLevel = sessionLevel === 'off' ? 'full' : sessionLevel;
             else if (parsed && typeof parsed === 'object') handleSubcommand(parsed, process.cwd());
           },

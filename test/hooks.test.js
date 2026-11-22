@@ -126,6 +126,7 @@ test('VIBES .ai-audit provenance protection blocks immutable artifacts and allow
 test('mode commands', () => {
   assert.strictEqual(parseCommand('/neckbeard'), 'on');
   assert.strictEqual(parseCommand('/neckbeard paranoid'), 'paranoid');
+  assert.strictEqual(parseCommand('/neckbeard ultra'), 'paranoid');
   assert.strictEqual(parseCommand('/neckbeard:neckbeard lite'), 'lite');
   assert.strictEqual(parseCommand('$neckbeard lite'), 'lite');
   assert.strictEqual(parseCommand('@neckbeard:neckbeard paranoid'), 'paranoid');
@@ -176,6 +177,8 @@ test('session start keeps surface map off by default and includes it only when N
 test('NECKBEARD_LEVEL sets the default', () => {
   const env = { NECKBEARD_STATE_DIR: tmpState(), NECKBEARD_LEVEL: 'off' };
   assert.strictEqual(run('session-start.js', { session_id: 'Z', source: 'startup' }, env), null);
+  const ultraEnv = { NECKBEARD_STATE_DIR: tmpState(), NECKBEARD_LEVEL: 'ultra' };
+  assert.match(run('session-start.js', { session_id: 'Z-ultra', source: 'startup' }, ultraEnv).hookSpecificOutput.additionalContext, /level: paranoid/);
 });
 
 test('surface map lists file paths by category, never code', () => {
@@ -361,6 +364,7 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   const piMod = await import('../pi-extension/index.js');
   assert.strictEqual(typeof piMod.default, 'function');
   assert.deepStrictEqual(piMod.parseNeckbeardCommand('paranoid'), { type: 'set-level', level: 'paranoid' });
+  assert.deepStrictEqual(piMod.parseNeckbeardCommand('ultra'), { type: 'set-level', level: 'paranoid' });
   assert.deepStrictEqual(piMod.parseNeckbeardCommand('load 300 rps'), { type: 'load', value: '300 rps' });
   assert.deepStrictEqual(piMod.parseNeckbeardCommand('share off'), { type: 'share', value: 'off' });
 

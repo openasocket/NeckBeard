@@ -12,6 +12,7 @@ const DEFAULT_LEVEL = 'full';
 
 function normalizeLevel(value) {
   const v = String(value || '').trim().toLowerCase();
+  if (v === 'ultra') return 'paranoid';
   return v === 'off' || LEVELS.includes(v) ? v : null;
 }
 

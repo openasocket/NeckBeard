@@ -24,7 +24,7 @@ Or inside an interactive Claude Code session, as two separate prompts:
 
 Claude Code loads [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json), [`hooks/claude-hooks.json`](hooks/claude-hooks.json), and [`hooks/claude-band.json`](hooks/claude-band.json), which activates:
 - **`SessionStart` & `SubagentStart`:** injects the active level's ruleset from [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md), the persisted project load default and concise internal/external trust-boundary map from `.neckbeard.json` (when present or when `NECKBEARD_SURFACE=1`), and the `.ai-audit/` VIBES summary (when present).
-- **`UserPromptSubmit`:** switches the session level (`/neckbeard lite|full|paranoid|off` or `"stop neckbeard"`), updates the project load default (`/neckbeard load <value>`), refreshes the trust-boundary map (`/neckbeard map`), toggles Git sharing of `.neckbeard.json` (`/neckbeard share on|off`), and controls the Claude Code banner and local HTML telemetry board (`/neckbeard band on|off|import|board`).
+- **`UserPromptSubmit`:** switches the session level (`/neckbeard lite|full|paranoid|ultra|off`, where `ultra` is an alias for `paranoid`, or `"stop neckbeard"`), updates the project load default (`/neckbeard load <value>`), refreshes the trust-boundary map (`/neckbeard map`), toggles Git sharing of `.neckbeard.json` (`/neckbeard share on|off`), and controls the Claude Code banner and local HTML telemetry board (`/neckbeard band on|off|import|board`).
 - **`PreToolUse` secret, config-censor & command guard:** at `full` (default), blocks hardcoded secrets in `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, and `Bash`, blocks direct agent tampering with immutable `.ai-audit/` VIBES provenance files, and enforces strict censorship on `.neckbeard.json`; at `paranoid`, also blocks `curl … | sh`, disabled TLS verification, `chmod 777`, `--no-verify`, and literal credentials.
 - **Claude Code `AbovePrompt` HUD (`hooks/claude-band.json`):** displays live session cost, tokens, turn time, definition reuse %, refactor line delta, open callers, `PreToolUse` guard blocks, security issues found/fixed, and VIBES PRISM risk score, and writes the local NeckBeard Security & Engineering Command Center to `~/.config/neckbeard/telemetry/dashboard.html`.
 
@@ -103,7 +103,7 @@ No configuration file is required. Optional environment variables and user confi
 
 | Setting | Default | What it does |
 |---|---|---|
-| `NECKBEARD_LEVEL` | `full` | Default level for new sessions (`lite`, `full`, `paranoid`, `off`). Overrides `~/.config/neckbeard/config.json`. |
+| `NECKBEARD_LEVEL` | `full` | Default level for new sessions (`lite`, `full`, `paranoid` / `ultra`, `off`; `ultra` is an alias for `paranoid`). Overrides `~/.config/neckbeard/config.json`. |
 | `~/.config/neckbeard/config.json` | `{"defaultLevel":"full"}` | Persistent default level when `NECKBEARD_LEVEL` is unset. |
 | `NECKBEARD_SURFACE=1` | `0` (off) | Opts into the regex attack-surface file map on `SessionStart`. |
 | `NECKBEARD_SUBAGENTS=0` | `1` (on) | Disables injecting the ruleset into subagents on `SubagentStart`. |

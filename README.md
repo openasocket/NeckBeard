@@ -194,13 +194,13 @@ gemini extensions install https://github.com/openasocket/NeckBeard
 
 ## Levels
 
-Switch levels anytime with `/neckbeard`, `$neckbeard`, or `@neckbeard` followed by `lite`, `full`, `paranoid`, or `off` (or say `"stop neckbeard"`).
+Switch levels anytime with `/neckbeard`, `$neckbeard`, or `@neckbeard` followed by `lite`, `full`, `paranoid` (or `ultra`), or `off` (or say `"stop neckbeard"`).
 
 | Level | Model behavior | Guard (`PreToolUse`) |
 |---|---|---|
 | `lite` | Builds what was asked and names the skipped gate or smaller option in one line. | Off |
 | `full` (default) | Applies all rules and gates from [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md) and [`AGENTS.md`](AGENTS.md). | Blocks hardcoded secrets & `.ai-audit/` tampering |
-| `paranoid` | Questions unjustified complexity or attack-surface growth before writing, states the boundary and load number, and refuses to drop trust or data-safety checks. | Blocks hardcoded secrets, `.ai-audit/` tampering & unsafe commands/TLS bypasses |
+| `paranoid` (alias: `ultra`) | Questions unjustified complexity or attack-surface growth before writing, states the boundary and load number, and refuses to drop trust or data-safety checks. | Blocks hardcoded secrets, `.ai-audit/` tampering & unsafe commands/TLS bypasses |
 | `off` | Stops applying the rules. | Off |
 
 Default level: `NECKBEARD_LEVEL` in the environment, else `defaultLevel` in `~/.config/neckbeard/config.json`, else `full`. Levels are stored per session, so parallel agents working in the same repository never overwrite each other's active level.

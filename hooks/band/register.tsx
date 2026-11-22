@@ -264,7 +264,8 @@ async function launchDashboardInBrowser($: EngineInterface) {
 
 async function initializeHudSession($: EngineInterface) {
   const grepRes = await $.process.run(['git', 'grep', '--untracked', '-nE', SYMBOL_GREP_REGEX]).catch(() => undefined)
-  const envLevel = (await $.env.get('NECKBEARD_LEVEL'))?.trim().toLowerCase()
+  const rawEnvLevel = (await $.env.get('NECKBEARD_LEVEL'))?.trim().toLowerCase()
+  const envLevel = rawEnvLevel === 'ultra' ? 'paranoid' : rawEnvLevel
   const activeLevel = envLevel && SUPPORTED_LEVELS.includes(envLevel) ? envLevel : 'full'
   const expandedDrawer = (await $.store.get('expandedDrawer')) === true
   const repo = await $.session.repo().catch(() => null)
@@ -467,8 +468,9 @@ export const register: Register = (on) => {
     const avgTurnCost = state.turnCount > 0 ? state.taskCostUsd / state.turnCount : 0
 
     const switchLevel = async (lvl: string) => {
-      await update($, hudAtom, (s) => ({ ...s, activeLevel: lvl }))
-      await $.command.run({ command: 'neckbeard:neckbeard', args: lvl })
+      const nextLvl = lvl.trim().toLowerCase() === 'ultra' ? 'paranoid' : lvl
+      await update($, hudAtom, (s) => ({ ...s, activeLevel: nextLvl }))
+      await $.command.run({ command: 'neckbeard:neckbeard', args: nextLvl })
     }
     const toggleDrawer = async () => {
       await update($, hudAtom, (s) => ({ ...s, expandedDrawer: !s.expandedDrawer }))

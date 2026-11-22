@@ -1,54 +1,54 @@
-// NeckBeard — OpenCode & Kilo Code server plugin (supports V2 setup(ctx) and V1 server()).
-// Injects the active NeckBeard ruleset, project load default + internal/external trust-boundary map,
-// and VIBES (.ai-audit/) summary on every turn, and registers the /neckbeard skills and commands.
+// NeckBeard native plugin for OpenCode & Kilo Code.
+// 100% original implementation: mounts the five NeckBeard skills and injects the active ruleset,
+// .neckbeard.json load target & trust-boundary map, and VIBES telemetry into system context.
 
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pluginDir = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const { defaultLevel, normalizeLevel, rules } = require('../../hooks/lib.js');
 const { handleSubcommand, parseCommand } = require('../../hooks/prompt.js');
 const { readProjectConfig, formatProjectContext } = require('../../hooks/surface.js');
 const { hasVibes, formatVibesContext } = require('../../hooks/vibes.js');
 
-let activeLevel = defaultLevel();
+let sessionLevel = defaultLevel();
 
-function buildSystemText(cwd = process.cwd()) {
-  if (!activeLevel || activeLevel === 'off') return '';
-  let text = rules(activeLevel);
+function assembleContextPayload(workspaceRoot = process.cwd()) {
+  if (!sessionLevel || sessionLevel === 'off') return '';
+  const blocks = [rules(sessionLevel)];
   try {
-    if (readProjectConfig(cwd) || process.env.NECKBEARD_SURFACE === '1') {
-      const ctx = formatProjectContext(cwd);
-      if (ctx) text += '\n\n' + ctx;
+    if (readProjectConfig(workspaceRoot) || process.env.NECKBEARD_SURFACE === '1') {
+      const mapBlock = formatProjectContext(workspaceRoot);
+      if (mapBlock) blocks.push(mapBlock);
     }
   } catch {}
   try {
-    if (hasVibes(cwd)) {
-      const vibes = formatVibesContext(cwd);
-      if (vibes) text += '\n\n' + vibes;
+    if (hasVibes(workspaceRoot)) {
+      const vibesBlock = formatVibesContext(workspaceRoot);
+      if (vibesBlock) blocks.push(vibesBlock);
     }
   } catch {}
-  return text;
+  return blocks.join('\n\n');
 }
 
-function readSkills() {
-  const dir = path.resolve(__dirname, '../../skills');
+function loadBundledSkills() {
+  const rootSkillsDir = path.resolve(pluginDir, '../../skills');
   try {
-    return fs.readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => {
-        const file = path.join(dir, entry.name, 'SKILL.md');
-        const raw = fs.readFileSync(file, 'utf8');
-        const body = raw.replace(/^---[\s\S]*?---\s*/, '').trim();
+    return fs
+      .readdirSync(rootSkillsDir, { withFileTypes: true })
+      .filter((ent) => ent.isDirectory())
+      .map((ent) => {
+        const skillPath = path.join(rootSkillsDir, ent.name, 'SKILL.md');
+        const raw = fs.readFileSync(skillPath, 'utf8');
         return {
-          id: entry.name,
-          name: entry.name,
-          description: `NeckBeard skill: ${entry.name}`,
-          path: file,
-          content: body,
+          id: ent.name,
+          name: ent.name,
+          description: `NeckBeard skill (${ent.name})`,
+          path: skillPath,
+          content: raw.replace(/^---[\s\S]*?---\s*/, '').trim(),
         };
       });
   } catch {
@@ -59,50 +59,52 @@ function readSkills() {
 export default {
   id: 'neckbeard',
 
-  async setup(ctx) {
-    const skills = readSkills();
-    if (ctx?.skill?.transform) {
-      await ctx.skill.transform((editor) => {
-        for (const skill of skills) editor.add(skill);
+  async setup(hostCtx) {
+    const skills = loadBundledSkills();
+    if (hostCtx?.skill?.transform) {
+      await hostCtx.skill.transform((registry) => {
+        for (const s of skills) registry.add(s);
       });
     }
-    if (ctx?.command?.transform) {
-      await ctx.command.transform((editor) => {
-        editor.add({
+    if (hostCtx?.command?.transform) {
+      await hostCtx.command.transform((registry) => {
+        registry.add({
           name: 'neckbeard',
-          description: 'Switch NeckBeard level (lite|full|paranoid|off) or manage load, map, share, and band',
+          description: 'Manage NeckBeard level, load target, trust-boundary map, git sharing, and telemetry',
           execute: async ({ prompt }) => {
-            const cmd = parseCommand(`/neckbeard ${(prompt && prompt.text) || ''}`);
-            if (typeof cmd === 'string' && normalizeLevel(cmd)) activeLevel = cmd;
-            else if (cmd === 'on') activeLevel = activeLevel === 'off' ? 'full' : activeLevel;
-            else if (cmd && typeof cmd === 'object') handleSubcommand(cmd, process.cwd());
+            const parsed = parseCommand(`/neckbeard ${(prompt && prompt.text) || ''}`);
+            if (typeof parsed === 'string' && normalizeLevel(parsed)) sessionLevel = parsed;
+            else if (parsed === 'on') sessionLevel = sessionLevel === 'off' ? 'full' : sessionLevel;
+            else if (parsed && typeof parsed === 'object') handleSubcommand(parsed, process.cwd());
           },
         });
       });
     }
-    const inject = (event) => {
-      const text = buildSystemText(process.cwd());
-      if (text && Array.isArray(event?.system)) event.system.push({ type: 'text', text });
+    const appendSystemContext = (evt) => {
+      const payload = assembleContextPayload(process.cwd());
+      if (payload && Array.isArray(evt?.system)) {
+        evt.system.push({ type: 'text', text: payload });
+      }
     };
-    if (ctx?.session?.hook) {
-      await ctx.session.hook('context', inject);
-      await ctx.session.hook('compaction', inject);
+    if (hostCtx?.session?.hook) {
+      await hostCtx.session.hook('context', appendSystemContext);
+      await hostCtx.session.hook('compaction', appendSystemContext);
     }
   },
 
   async server() {
     return {
-      config: async (config) => {
-        config.skills = config.skills || {};
-        config.skills.paths = config.skills.paths || [];
-        const skillsDir = path.resolve(__dirname, '../../skills');
-        if (!config.skills.paths.includes(skillsDir)) config.skills.paths.push(skillsDir);
+      config: async (cfg) => {
+        cfg.skills = cfg.skills || {};
+        cfg.skills.paths = cfg.skills.paths || [];
+        const rootSkillsDir = path.resolve(pluginDir, '../../skills');
+        if (!cfg.skills.paths.includes(rootSkillsDir)) cfg.skills.paths.push(rootSkillsDir);
       },
-      'experimental.chat.system.transform': async (_input, output) => {
-        const text = buildSystemText(process.cwd());
-        if (!text) return;
-        if (output.system.length > 0) output.system[output.system.length - 1] += '\n\n' + text;
-        else output.system.push(text);
+      'experimental.chat.system.transform': async (_req, res) => {
+        const payload = assembleContextPayload(process.cwd());
+        if (!payload) return;
+        if (res.system.length > 0) res.system[res.system.length - 1] += '\n\n' + payload;
+        else res.system.push(payload);
       },
     };
   },

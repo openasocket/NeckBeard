@@ -1,3 +1,7 @@
+// NeckBeard native extension for Pi and Oh My Pi (omp).
+// 100% original implementation: renders live TUI status indicator, registers /neckbeard* commands,
+// and injects active NeckBeard gates, .neckbeard.json load/trust-boundary map, and VIBES telemetry.
+
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -18,199 +22,170 @@ const {
 } = require('../hooks/surface.js');
 const { hasVibes, formatVibesContext } = require('../hooks/vibes.js');
 
-const COMMAND_DESCRIPTION = 'Set level: lite|full|paranoid|off. Commands: status, load <val>, map, share on|off';
-
-export function completeNeckbeardArgs(prefix) {
-  const typed = String(prefix || '').trimStart();
-  const values = [
-    ...LEVELS,
-    'off',
-    'status',
-    'map',
-    'share on',
-    'share off',
-    'load ',
-  ].filter((v) => v.startsWith(typed));
-  return values.length ? values.map((value) => ({ value, label: value })) : null;
-}
-
-export function parseNeckbeardCommand(text, currentLevel = DEFAULT_LEVEL) {
-  const raw = String(text || '').trim();
-  const lower = raw.toLowerCase();
-  if (!raw) {
+export function parseNeckbeardCommand(rawInput, currentLevel = DEFAULT_LEVEL) {
+  const trimmed = String(rawInput || '').trim();
+  if (!trimmed) {
     return currentLevel && currentLevel !== 'off'
       ? { type: 'status' }
       : { type: 'set-level', level: DEFAULT_LEVEL };
   }
-  const tokens = raw.split(/\s+/);
-  const sub = tokens[0].toLowerCase();
-  if (sub === 'status') return { type: 'status' };
-  if (sub === 'map') return { type: 'map' };
-  if (sub === 'load') return { type: 'load', value: raw.slice(4).trim() };
-  if (sub === 'share') {
-    const mode = (tokens[1] || '').toLowerCase();
-    return mode === 'on' || mode === 'off' ? { type: 'share', value: mode } : { type: 'invalid' };
+  const parts = trimmed.split(/\s+/);
+  const verb = parts[0].toLowerCase();
+  if (verb === 'status') return { type: 'status' };
+  if (verb === 'map') return { type: 'map' };
+  if (verb === 'load') return { type: 'load', value: trimmed.slice(4).trim() };
+  if (verb === 'share') {
+    const toggle = (parts[1] || '').toLowerCase();
+    return toggle === 'on' || toggle === 'off' ? { type: 'share', value: toggle } : { type: 'invalid' };
   }
-  const lvl = normalizeLevel(sub);
-  return lvl ? { type: 'set-level', level: lvl } : { type: 'invalid' };
+  const normalized = normalizeLevel(verb);
+  return normalized ? { type: 'set-level', level: normalized } : { type: 'invalid' };
 }
 
-export default function neckbeardExtension(pi) {
-  let currentLevel = defaultLevel();
-  let isActive = false;
-  let lastCtx = null;
+export default function registerNeckbeardPi(host) {
+  let activeLevel = defaultLevel();
+  let agentBusy = false;
 
-  function syncStatus(ctx) {
-    if (ctx) lastCtx = ctx;
-    const c = ctx || lastCtx;
-    if (!c?.ui?.setStatus) return;
-    let theme;
+  function renderStatusStrip(ctx) {
+    const ui = ctx?.ui;
+    if (!ui?.setStatus) return;
+    if (activeLevel === 'off') {
+      ui.setStatus('neckbeard', undefined);
+      return;
+    }
+    let paint = (_tone, text) => text;
     try {
-      theme = c.ui.theme;
-      if (!theme?.fg) return;
+      if (ui.theme && typeof ui.theme.fg === 'function') paint = (t, s) => ui.theme.fg(t, s);
     } catch {
       return;
     }
-    if (currentLevel === 'off') {
-      c.ui.setStatus('neckbeard', undefined);
-      return;
-    }
-    const levelIcons = { lite: '🌿', full: '🛡️', paranoid: '🔒' };
-    const icon = levelIcons[currentLevel] || '🛡️';
-    const label = currentLevel.toUpperCase();
-    const indicator = isActive ? theme.fg('accent', '●') : theme.fg('dim', '○');
-    const cfg = readProjectConfig(process.cwd());
+    const dot = agentBusy ? paint('accent', '●') : paint('dim', '○');
+    const badge = `${dot} 🧔 ${paint('muted', 'neckbeard:')} ${paint('text', activeLevel.toUpperCase())}`;
+    const workspaceCfg = readProjectConfig(process.cwd());
     const drift = detectBoundaryDrift(process.cwd());
     const guard = readGuardStats();
-    const extras = [];
-    if (cfg && cfg.load) extras.push(cfg.load.slice(0, 20));
-    if (guard && guard.total > 0) extras.push(`${guard.total} blocked`);
-    if (drift && drift.added.length > 0) extras.push(`⚠ +${drift.added.length} boundary`);
-    const tail = extras.length ? theme.fg('muted', ' · ' + extras.join(' · ')) : '';
-    c.ui.setStatus(
-      'neckbeard',
-      indicator + ' 🧔 ' + theme.fg('muted', 'neckbeard: ') + theme.fg('text', `${icon} ${label}`) + tail
-    );
+    const details = [];
+    if (workspaceCfg && workspaceCfg.load) details.push(workspaceCfg.load.slice(0, 22));
+    if (guard && guard.total > 0) details.push(`🛡️ ${guard.total} blocked`);
+    if (drift && drift.added.length > 0) details.push(`⚠ +${drift.added.length} boundary`);
+    const suffix = details.length ? paint('muted', ` · ${details.join(' · ')}`) : '';
+    ui.setStatus('neckbeard', badge + suffix);
   }
 
-  const setLevel = (level, ctx) => {
-    const normalized = normalizeLevel(level);
-    if (!normalized) return;
-    currentLevel = normalized;
-    pi.appendEntry?.('neckbeard-level', { level: normalized });
-    syncStatus(ctx);
-    ctx?.ui?.notify?.(`NeckBeard level set to ${normalized}.`, 'info');
-  };
-
-  const sendAlias = (skillName, args, ctx) => {
-    const normalized = String(args || '').trim();
-    const message = normalized ? `${skillName} ${normalized}` : skillName;
-    if (ctx?.isIdle?.() === false) {
-      pi.sendUserMessage(message, { expandPromptTemplates: true, deliverAs: 'followUp' });
-      ctx?.ui?.notify?.(`${skillName} queued as follow-up.`, 'info');
-      return;
-    }
-    pi.sendUserMessage(message, { expandPromptTemplates: true });
-  };
-
-  pi.registerCommand('neckbeard', {
-    description: COMMAND_DESCRIPTION,
-    getArgumentCompletions: (prefix) => completeNeckbeardArgs(prefix),
+  host.registerCommand('neckbeard', {
+    description: 'Configure NeckBeard level (lite|full|paranoid|off), load target, trust map, or git sharing',
+    getArgumentCompletions: (prefix) => {
+      const p = String(prefix || '').trimStart();
+      return [...LEVELS, 'off', 'status', 'map', 'share on', 'share off', 'load ']
+        .filter((opt) => opt.startsWith(p))
+        .map((value) => ({ value, label: value }));
+    },
     handler: async (args, ctx) => {
-      const parsed = parseNeckbeardCommand(args, currentLevel);
-      if (parsed.type === 'status') {
+      const cmd = parseNeckbeardCommand(args, activeLevel);
+      if (cmd.type === 'status') {
         const cfg = readProjectConfig(process.cwd());
-        ctx?.ui?.notify?.(`NeckBeard: level ${currentLevel} • load ${(cfg && cfg.load) || 'unset'}`, 'info');
+        ctx?.ui?.notify?.(`NeckBeard [${activeLevel}] • load: ${(cfg && cfg.load) || 'unset'}`, 'info');
         return;
       }
-      if (parsed.type === 'set-level') {
-        setLevel(parsed.level, ctx);
+      if (cmd.type === 'set-level') {
+        activeLevel = cmd.level;
+        host.appendEntry?.('neckbeard-level', { level: activeLevel });
+        renderStatusStrip(ctx);
+        ctx?.ui?.notify?.(`NeckBeard level switched to ${activeLevel}.`, 'info');
         return;
       }
-      if (parsed.type === 'load') {
-        if (!parsed.value) {
+      if (cmd.type === 'load') {
+        if (!cmd.value) {
           const cfg = readProjectConfig(process.cwd());
-          ctx?.ui?.notify?.(`NeckBeard load: ${(cfg && cfg.load) || 'unset'}`, 'info');
+          ctx?.ui?.notify?.(`NeckBeard load target: ${(cfg && cfg.load) || 'unset'}`, 'info');
           return;
         }
-        const kv = parsed.value.match(/^([a-z-]+)\s*=\s*([\s\S]*)$/i);
+        const kv = cmd.value.match(/^([a-z-]+)\s*=\s*([\s\S]*)$/i);
         const saved = kv
           ? writeProjectConfig(process.cwd(), { boundaryLoad: { [kv[1].toLowerCase()]: kv[2].trim() } })
-          : writeProjectConfig(process.cwd(), { load: parsed.value });
-        syncStatus(ctx);
-        ctx?.ui?.notify?.(`Saved load default (${saved.shared ? 'shared' : 'local'}): ${saved.load}`, 'info');
+          : writeProjectConfig(process.cwd(), { load: cmd.value });
+        renderStatusStrip(ctx);
+        ctx?.ui?.notify?.(`Saved load target (${saved.shared ? 'shared' : 'local'}): ${saved.load}`, 'info');
         return;
       }
-      if (parsed.type === 'map') {
+      if (cmd.type === 'map') {
         writeProjectConfig(process.cwd(), { boundaries: buildBoundaryMap(process.cwd()) });
-        syncStatus(ctx);
-        ctx?.ui?.notify?.('NeckBeard trust-boundary map refreshed.', 'info');
+        renderStatusStrip(ctx);
+        ctx?.ui?.notify?.('Refreshed External & Internal Trust-Boundary Map.', 'info');
         return;
       }
-      if (parsed.type === 'share') {
-        const shared = parsed.value === 'on';
+      if (cmd.type === 'share') {
+        const shared = cmd.value === 'on';
         writeProjectConfig(process.cwd(), { shared });
-        syncStatus(ctx);
-        ctx?.ui?.notify?.(`NeckBeard git sharing ${shared ? 'enabled (.neckbeard.json)' : 'disabled (local)'}.`, 'info');
+        renderStatusStrip(ctx);
+        ctx?.ui?.notify?.(`Git sharing of .neckbeard.json ${shared ? 'enabled' : 'disabled (moved local)'}.`, 'info');
         return;
       }
-      ctx?.ui?.notify?.('Unknown /neckbeard command. Use lite|full|paranoid|off, load, map, or share on|off.', 'warning');
+      ctx?.ui?.notify?.('Usage: /neckbeard [lite|full|paranoid|off|load <val>|map|share on|off]', 'warning');
     },
   });
 
-  for (const cmd of ['neckbeard-review', 'neckbeard-audit', 'neckbeard-debt', 'neckbeard-gain']) {
-    pi.registerCommand(cmd, {
-      description: cmd === 'neckbeard-audit' ? 'Run /skill:neckbeard-audit [lite|complete]' : `Run /skill:${cmd}`,
-      getArgumentCompletions: cmd === 'neckbeard-audit'
-        ? (prefix) => ['lite', 'complete'].filter((v) => v.startsWith(String(prefix || '').trimStart())).map((value) => ({ value, label: value }))
-        : undefined,
-      handler: (args, ctx) => sendAlias(`/skill:${cmd}`, args, ctx),
+  for (const skillCmd of ['neckbeard-review', 'neckbeard-audit', 'neckbeard-debt', 'neckbeard-gain']) {
+    host.registerCommand(skillCmd, {
+      description: skillCmd === 'neckbeard-audit' ? 'Run /skill:neckbeard-audit [lite|complete]' : `Run /skill:${skillCmd}`,
+      getArgumentCompletions:
+        skillCmd === 'neckbeard-audit'
+          ? (prefix) =>
+              ['lite', 'complete']
+                .filter((opt) => opt.startsWith(String(prefix || '').trimStart()))
+                .map((value) => ({ value, label: value }))
+          : undefined,
+      handler: (args, ctx) => {
+        const trimmed = String(args || '').trim();
+        const prompt = trimmed ? `/skill:${skillCmd} ${trimmed}` : `/skill:${skillCmd}`;
+        if (ctx?.isIdle?.() === false) {
+          host.sendUserMessage(prompt, { expandPromptTemplates: true, deliverAs: 'followUp' });
+        } else {
+          host.sendUserMessage(prompt, { expandPromptTemplates: true });
+        }
+      },
     });
   }
 
-  pi.on('session_start', async (_event, ctx) => {
-    currentLevel = defaultLevel();
-    syncStatus(ctx);
+  host.on('session_start', async (_evt, ctx) => {
+    activeLevel = defaultLevel();
+    renderStatusStrip(ctx);
   });
 
-  for (const eventName of ['session_tree', 'session_switch', 'session_branch']) {
-    pi.on(eventName, async (_event, ctx) => syncStatus(ctx));
-  }
-
-  pi.on('agent_start', async (_event, ctx) => {
-    isActive = true;
-    syncStatus(ctx);
+  host.on('agent_start', async (_evt, ctx) => {
+    agentBusy = true;
+    renderStatusStrip(ctx);
   });
 
-  pi.on('agent_end', async (_event, ctx) => {
-    isActive = false;
-    syncStatus(ctx);
+  host.on('agent_end', async (_evt, ctx) => {
+    agentBusy = false;
+    renderStatusStrip(ctx);
   });
 
-  pi.on('before_agent_start', async (event) => {
-    if (!currentLevel || currentLevel === 'off') {
-      if (event?.systemPromptOptions?.sections) delete event.systemPromptOptions.sections.neckbeard;
+  host.on('before_agent_start', async (evt) => {
+    if (!activeLevel || activeLevel === 'off') {
+      if (evt?.systemPromptOptions?.sections) delete evt.systemPromptOptions.sections.neckbeard;
       return;
     }
-    let text = rules(currentLevel);
     const cwd = process.cwd();
+    const parts = [rules(activeLevel)];
     if (readProjectConfig(cwd) || process.env.NECKBEARD_SURFACE === '1') {
-      const ctx = formatProjectContext(cwd);
-      if (ctx) text += '\n\n' + ctx;
+      const projCtx = formatProjectContext(cwd);
+      if (projCtx) parts.push(projCtx);
     }
     if (hasVibes(cwd)) {
-      const vibes = formatVibesContext(cwd);
-      if (vibes) text += '\n\n' + vibes;
+      const vibesCtx = formatVibesContext(cwd);
+      if (vibesCtx) parts.push(vibesCtx);
     }
-    const sections = event?.systemPromptOptions?.sections;
-    if (sections && typeof sections === 'object') {
-      sections.neckbeard = text;
+    const bundle = parts.join('\n\n');
+    if (evt?.systemPromptOptions?.sections && typeof evt.systemPromptOptions.sections === 'object') {
+      evt.systemPromptOptions.sections.neckbeard = bundle;
       return;
     }
-    if (Array.isArray(event?.systemPrompt)) {
-      return { systemPrompt: [...event.systemPrompt, text] };
+    if (Array.isArray(evt?.systemPrompt)) {
+      return { systemPrompt: [...evt.systemPrompt, bundle] };
     }
-    const base = event?.systemPrompt ? `${event.systemPrompt}\n\n` : '';
-    return { systemPrompt: `${base}${text}` };
+    const prefix = evt?.systemPrompt ? `${evt.systemPrompt}\n\n` : '';
+    return { systemPrompt: `${prefix}${bundle}` };
   });
 }

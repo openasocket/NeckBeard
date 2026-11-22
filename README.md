@@ -80,7 +80,7 @@ Then it enforces the three gates from line one:
 | `neckbeard-review` | Reviews a change against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md) with concrete failure cases, variant search, and `--ci` gate mode. |
 | `neckbeard-audit` | Audits a repo or folder (`lite` default: targeted execution flows and major internal/external data & trust boundaries; `complete`: every single code, config, and doc file in the repo, with an upfront time/token/tool-call warning) against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). |
 | `neckbeard-debt` | Scans tracked and untracked files for `risk:`, `shortcut:`, and `ponytail:` markers and enforces the accepted-risk boundary from [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). |
-| `neckbeard-gain` | Local telemetry report and HTML dashboard (`~/.config/neckbeard/band/board.html`): tokens, cost, turn time, definition reuse %, refactor line delta, `PreToolUse` guard blocks, and security issues identified/resolved (defaulting to `.ai-audit/` VIBES data when present). |
+| `neckbeard-gain` | Local telemetry report and Security & Engineering Command Center (`~/.config/neckbeard/telemetry/dashboard.html`): tokens, cost, turn time, definition reuse %, refactor line delta, `PreToolUse` guard blocks, and security issues identified/resolved (defaulting to `.ai-audit/` VIBES data when present). |
 
 ---
 
@@ -110,9 +110,9 @@ For **trust boundaries**, NeckBeard never asks you to do its threat modeling: it
 
 ---
 
-## Claude Code Banner (`AbovePrompt` Band) & Local Telemetry Board
+## Claude Code Banner (`AbovePrompt` HUD) & Security Command Center
 
-In Claude Code (CLI and Desktop), NeckBeard loads [`hooks/claude-band.json`](hooks/claude-band.json) ([`hooks/band/register.tsx`](hooks/band/register.tsx)) to render an interactive banner above the prompt input box and maintain a **100% local** telemetry ledger and self-contained HTML dashboard (`~/.config/neckbeard/band/board.html`):
+In Claude Code (CLI and Desktop), NeckBeard loads [`hooks/claude-band.json`](hooks/claude-band.json) ([`hooks/band/register.tsx`](hooks/band/register.tsx)) to render an interactive HUD above the prompt input box and maintain a **100% local** JSONL telemetry store (`~/.config/neckbeard/telemetry/sessions.jsonl`) and self-contained **NeckBeard Security & Engineering Command Center** (`~/.config/neckbeard/telemetry/dashboard.html`):
 
 - **Tokens, Cost & Turn Performance:** Session and per-turn API cost (`$`), input/output/cache tokens, and active agent work time.
 - **Refactor & Code Reuse Optimizations:** Definition reuse percentage (`reused` vs. `new` functions/classes), net refactor line delta (`+added / -removed` LOC), open callers warning (`⚠ N callers open`), and live test status (`✓ N tests`, `✗ N failed`, `stale`).
@@ -243,7 +243,7 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 | **Speed & scale** | Checked during review/audit | Baked into the writing rules (`Fast and scalable at the named number`: input limits, idempotent retries, no N+1, no races, no quadratic or blocking work) |
 | **End-user experience** | Minimal implementation of core job | Deep modules: absorb security, retry, and validation complexity inside; safe defaults and actionable failure outcomes outside |
 | **Debt ledger** | `shortcut:` comments via `/ponytail-debt` | `risk:` (and `shortcut:`) comments via `/neckbeard-debt`, flagging any `illegal-deferral` of a trust check or data-loss write |
-| **Telemetry & Band** | Local CSV ledger, Claude Code band & optional webhook | 100% local Claude Code band & HTML board (`~/.config/neckbeard/band/board.html`) with reuse %, refactor LOC delta, guard blocks, security issues resolved, and automatic `.ai-audit/` VIBES ingestion (zero network calls) |
+| **Telemetry & Band** | Local CSV ledger, Claude Code band & optional webhook | 100% local JSONL telemetry store (`sessions.jsonl`), Claude Code HUD & NeckBeard Security & Engineering Command Center (`~/.config/neckbeard/telemetry/dashboard.html`) with reuse %, refactor LOC delta, guard blocks, security issues resolved, and automatic `.ai-audit/` VIBES ingestion (zero network calls) |
 
 ---
 

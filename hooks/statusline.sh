@@ -1,17 +1,28 @@
 #!/usr/bin/env bash
-# Prints the active NeckBeard level for Claude Code's terminal statusLine.
-uid=$(id -u 2>/dev/null || echo u)
-state_dir="${NECKBEARD_STATE_DIR:-${TMPDIR:-/tmp}/neckbeard-$uid}"
-flag="$state_dir/.neckbeard-active"
-mode="${NECKBEARD_LEVEL:-full}"
-[ -f "$flag" ] && mode=$(head -n1 "$flag" | tr -d '[:space:]')
-[ "$mode" = "off" ] && exit 0
+# NeckBeard terminal statusline widget for Claude Code.
+# Displays active intensity level and total PreToolUse guard blocks from local state.
+uid_val=$(id -u 2>/dev/null || echo u)
+nb_state="${NECKBEARD_STATE_DIR:-${TMPDIR:-/tmp}/neckbeard-$uid_val}"
+active_file="$nb_state/.neckbeard-active"
+guard_file="$nb_state/guard-stats.json"
 
-color=108
-[ "$mode" = "paranoid" ] && color=173
+lvl="${NECKBEARD_LEVEL:-full}"
+if [ -f "$active_file" ]; then
+  lvl=$(tr -d '[:space:]' < "$active_file")
+fi
+[ "$lvl" = "off" ] && exit 0
 
-if [ -z "$mode" ] || [ "$mode" = "full" ]; then
-    printf '\033[38;5;%sm[NECKBEARD]\033[0m' "$color"
+blocks=""
+if [ -f "$guard_file" ]; then
+  cnt=$(sed -n 's/.*"total":\([0-9][0-9]*\).*/\1/p' "$guard_file" | head -n 1)
+  if [ -n "$cnt" ] && [ "$cnt" -gt 0 ] 2>/dev/null; then
+    blocks=" · ${cnt} blocked"
+  fi
+fi
+
+upper_lvl=$(printf '%s' "$lvl" | tr '[:lower:]' '[:upper:]')
+if [ "$lvl" = "paranoid" ]; then
+  printf '\033[38;5;214m● NECKBEARD [%s%s]\033[0m' "$upper_lvl" "$blocks"
 else
-    printf '\033[38;5;%sm[NECKBEARD:%s]\033[0m' "$color" "$(printf '%s' "$mode" | tr '[:lower:]' '[:upper:]')"
+  printf '\033[38;5;42m● NECKBEARD [%s%s]\033[0m' "$upper_lvl" "$blocks"
 fi

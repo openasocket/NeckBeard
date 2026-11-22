@@ -300,7 +300,7 @@ test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
   assert.match(summary, /VIBES \(\.ai-audit\) : active/);
   assert.match(summary, /1 PreToolUse blocks/);
   assert.match(summary, /\+18 \/ -42 lines/);
-  const boardFile = path.join(cfgHome, 'neckbeard', 'band', 'board.html');
+  const boardFile = path.join(cfgHome, 'neckbeard', 'telemetry', 'dashboard.html');
   assert.ok(fs.existsSync(boardFile));
   const boardHtml = fs.readFileSync(boardFile, 'utf8');
   assert.ok(boardHtml.includes('Trust-Boundary Graph'));

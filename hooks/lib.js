@@ -24,7 +24,7 @@ function claudeDir(env = process.env) {
 }
 
 function bandDir(env = process.env) {
-  return path.join(configBase(env), 'neckbeard', 'band');
+  return path.join(configBase(env), 'neckbeard', 'telemetry');
 }
 
 // NECKBEARD_LEVEL beats the config file; anything unreadable falls back to full.

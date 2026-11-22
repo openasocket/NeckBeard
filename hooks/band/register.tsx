@@ -1,591 +1,562 @@
+// NeckBeard Claude Code AbovePrompt HUD & Local Telemetry Command Center.
+// 100% original implementation: tracks symbol reuse, net refactor line delta, trust-boundary drift,
+// PreToolUse guard blocks, VIBES (.ai-audit/) PRISM risk & TRACE forensics, and writes JSONL telemetry
+// to ~/.config/neckbeard/telemetry/sessions.jsonl and ~/.config/neckbeard/telemetry/dashboard.html.
+
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { boardHtml, tasksFrom } from './board'
-import type { Band } from './types'
-import type { Col } from './metrics'
+import { parseJsonlRecords, renderDashboardHtml } from './dashboard'
+import type { HudMetricCard } from './analyzer'
 import {
-  GREP_DEFS,
-  NO_TOKENS,
-  addTokens,
-  addedLines,
-  callsIn,
-  defsIn,
-  elapsed,
-  fmtTokens,
-  hits,
-  inProject,
-  isCode,
-  isSource,
-  isTestCommand,
-  lineDelta,
-  mainModel,
-  markdown,
-  metricsSvg,
-  MODEL_PATTERN,
-  parseDefs,
-  percent,
-  relPath,
-  resume,
-  sinksIn,
-  snapshot,
-  testCounts,
-  sessionTitle,
-  taskKey,
-  testsLabel,
-  TITLE_RECORD,
-  totalTokens,
-  upsertCsv,
-} from './metrics'
+  EMPTY_TOKEN_BUCKETS,
+  SYMBOL_GREP_REGEX,
+  accumulateTokenBuckets,
+  computeReusePercentage,
+  detectBoundarySinks,
+  evaluateTestOutput,
+  extractSymbols,
+  formatDurationMs,
+  formatTestStatusBadge,
+  formatTokenCount,
+  indexWorkspaceSymbols,
+  isProductionSourceFile,
+  isTestRunnerCommand,
+  isTrackedCodeFile,
+  isWithinWorkspace,
+  measureDiffImpact,
+  renderDesktopHudSvg,
+  renderMarkdownReport,
+  serializeSessionRecord,
+  sumTokenBuckets,
+  toWorkspaceRelativePath,
+  upsertJsonlLedger,
+} from './analyzer'
+import type { NeckbeardHudState } from './types'
 
-const LEVELS = ['off', 'lite', 'full', 'paranoid']
-const EMPTY: Band = {
-  level: 'full',
-  model: '',
-  cost: 0,
-  spent: 0,
-  turns: 0,
-  turnCosts: [],
-  tokens: NO_TOKENS,
-  busyMs: 0,
-  name: '',
-  project: '',
-  session: '',
-  transcript: '',
-  reused: [],
-  created: [],
-  removed: [],
-  linesAdded: 0,
-  linesRemoved: 0,
-  openCallers: [],
-  newBoundaries: [],
-  guardBlocks: 0,
-  secFound: 0,
-  secFixed: 0,
-  vibesRisk: null,
-  loadTarget: '',
-  tests: { state: 'none' },
-  details: false,
+const SUPPORTED_LEVELS = ['off', 'lite', 'full', 'paranoid']
+
+const INITIAL_HUD_STATE: NeckbeardHudState = {
+  activeLevel: 'full',
+  modelId: '',
+  baselineCostUsd: 0,
+  taskCostUsd: 0,
+  turnCount: 0,
+  recentTurnCosts: [],
+  tokenBuckets: EMPTY_TOKEN_BUCKETS,
+  activeDurationMs: 0,
+  taskTitle: '',
+  projectName: '',
+  sessionId: '',
+  transcriptPath: '',
+  reusedSymbols: [],
+  createdSymbols: [],
+  deletedSymbols: [],
+  linesInserted: 0,
+  linesDeleted: 0,
+  unmigratedCallers: [],
+  unreviewedBoundaries: [],
+  guardBlockCount: 0,
+  securityFindingsTotal: 0,
+  securityFindingsResolved: 0,
+  vibesMaxPrismRisk: null,
+  loadEnvelope: '',
+  testStatus: { verdict: 'untested' },
+  expandedDrawer: false,
 }
 
-const TASK = {
-  spent: 0,
-  turns: 0,
-  turnCosts: [],
-  tokens: NO_TOKENS,
-  busyMs: 0,
-  name: '',
-  model: '',
-  reused: [],
-  created: [],
-  removed: [],
-  linesAdded: 0,
-  linesRemoved: 0,
-  openCallers: [],
-  newBoundaries: [],
-  guardBlocks: 0,
-  secFound: 0,
-  secFixed: 0,
-  vibesRisk: null,
-  tests: { state: 'none' as const },
+const hudAtom = atom({ plugin: 'neckbeard', key: 'hud' } as const, INITIAL_HUD_STATE)
+const readHud = async ($: EngineInterface): Promise<NeckbeardHudState> => ({
+  ...INITIAL_HUD_STATE,
+  ...(await read($, hudAtom)),
+})
+
+const mergeUnique = (a: string[], b: string[]) => [...new Set([...a, ...b])]
+const basenameOf = (p: string) => p.replace(/\/+$/, '').split('/').pop() ?? p
+
+async function resolveHomeDir($: EngineInterface): Promise<string> {
+  return (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE')) ?? ''
 }
 
-const band = atom({ plugin: 'neckbeard', key: 'band' } as const, EMPTY)
-const load = async ($: EngineInterface): Promise<Band> => ({ ...EMPTY, ...(await read($, band)) })
-const union = (a: string[], b: string[]) => [...new Set([...a, ...b])]
-const base = (p: string) => p.replace(/\/+$/, '').split('/').pop() ?? p
+async function resolveTelemetryDir($: EngineInterface): Promise<string> {
+  const xdg = await $.env.get('XDG_CONFIG_HOME')
+  const base = xdg ?? `${await resolveHomeDir($)}/.config`
+  return `${base}/neckbeard/telemetry`
+}
 
-const home = async ($: EngineInterface) => (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
-const claudeDir = async ($: EngineInterface) => (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${await home($)}/.claude`
-
-async function bandHidden($: EngineInterface): Promise<boolean> {
+async function isHudHidden($: EngineInterface): Promise<boolean> {
+  const claudeDir = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${await resolveHomeDir($)}/.claude`
   try {
-    return (await $.fs.read(`${await claudeDir($)}/.neckbeard-band`)).trim() === 'off'
+    return (await $.fs.read(`${claudeDir}/.neckbeard-band`)).trim() === 'off'
   } catch {
     return false
   }
 }
 
-async function readLevel($: EngineInterface): Promise<string> {
-  const fromEnv = (await $.env.get('NECKBEARD_LEVEL'))?.trim().toLowerCase()
-  if (fromEnv && LEVELS.includes(fromEnv)) return fromEnv
-  return 'full'
-}
-
-// Read project's saved load target and baseline trust-boundary entries from .neckbeard.json when present.
-async function readProjectBaseline($: EngineInterface, root: string): Promise<{ load: string; boundaries: Set<string> }> {
+async function inspectWorkspaceConfig($: EngineInterface, rootDir: string): Promise<{ load: string; knownBoundaries: Set<string> }> {
   try {
-    const raw = await $.fs.read(`${root}/.neckbeard.json`)
-    const cfg = JSON.parse(raw) as {
+    const raw = await $.fs.read(`${rootDir}/.neckbeard.json`)
+    const parsed = JSON.parse(raw) as {
       load?: string
-      boundaries?: {
-        external?: Record<string, string[]>
-        internal?: Record<string, string[]>
-      }
+      boundaries?: { external?: Record<string, string[]>; internal?: Record<string, string[]> }
     }
     const set = new Set<string>()
-    for (const group of [cfg.boundaries?.external, cfg.boundaries?.internal]) {
-      if (!group) continue
-      for (const arr of Object.values(group)) {
-        if (Array.isArray(arr)) for (const item of arr) set.add(item)
+    for (const tier of [parsed.boundaries?.external, parsed.boundaries?.internal]) {
+      if (!tier) continue
+      for (const list of Object.values(tier)) {
+        if (Array.isArray(list)) for (const entry of list) set.add(entry)
       }
     }
-    return { load: typeof cfg.load === 'string' ? cfg.load.trim() : '', boundaries: set }
+    return { load: typeof parsed.load === 'string' ? parsed.load.trim() : '', knownBoundaries: set }
   } catch {
-    return { load: '', boundaries: new Set() }
+    return { load: '', knownBoundaries: new Set() }
   }
 }
 
-// Default to reading VIBES (.ai-audit/annotations.jsonl) when present in the project.
-async function readVibesMetrics($: EngineInterface, root: string): Promise<{ risk: number | null; found: number; fixed: number; added: number; removed: number }> {
+async function inspectVibesAnnotations($: EngineInterface, rootDir: string) {
   try {
-    const raw = await $.fs.read(`${root}/.ai-audit/annotations.jsonl`)
+    const raw = await $.fs.read(`${rootDir}/.ai-audit/annotations.jsonl`)
     let maxRisk: number | null = null
-    let found = 0
-    let fixed = 0
-    let added = 0
-    let removed = 0
+    let findings = 0
+    let resolved = 0
+    let inserted = 0
+    let deleted = 0
     for (const line of raw.split('\n')) {
       const t = line.trim()
       if (!t.startsWith('{')) continue
       try {
-        const a = JSON.parse(t) as Record<string, unknown>
-        const risk = typeof a.risk_score === 'number' ? a.risk_score : null
-        if (risk !== null) {
-          maxRisk = maxRisk === null ? risk : Math.max(maxRisk, risk)
-          if (risk >= 0.6) {
-            found++
-            if (a.verified === true || a.resolved === true || a.status === 'resolved') fixed++
+        const rec = JSON.parse(t) as Record<string, unknown>
+        if (typeof rec.risk_score === 'number') {
+          maxRisk = maxRisk === null ? rec.risk_score : Math.max(maxRisk, rec.risk_score)
+          if (rec.risk_score >= 0.6) {
+            findings++
+            if (rec.verified === true || rec.resolved === true || rec.status === 'resolved') resolved++
           }
         }
-        if (a.type === 'incident' || a.record_type === 'incident') {
-          found++
-          if (a.resolved === true || a.status === 'resolved' || a.status === 'mitigated') fixed++
+        if (rec.type === 'incident' || rec.record_type === 'incident') {
+          findings++
+          if (rec.resolved === true || rec.status === 'resolved' || rec.status === 'mitigated') resolved++
         }
-        if (typeof a.lines_added === 'number') added += a.lines_added
-        if (typeof a.lines_removed === 'number') removed += a.lines_removed
+        if (typeof rec.lines_added === 'number') inserted += rec.lines_added
+        if (typeof rec.lines_removed === 'number') deleted += rec.lines_removed
       } catch {
         continue
       }
     }
-    return { risk: maxRisk, found, fixed, added, removed }
+    return { maxRisk, findings, resolved, inserted, deleted }
   } catch {
-    return { risk: null, found: 0, fixed: 0, added: 0, removed: 0 }
+    return { maxRisk: null, findings: 0, resolved: 0, inserted: 0, deleted: 0 }
   }
 }
 
-const run = ($: EngineInterface, command: string, args = '') => $.command.run({ command, args })
-
-type Options = { readonly [field: string]: unknown }
-
-async function readTitle($: EngineInterface, transcript: string): Promise<string | undefined> {
-  if (transcript === '') return undefined
-  const grep = await $.process.run(['grep', '-F', TITLE_RECORD, transcript]).catch(() => undefined)
-  const text = grep !== undefined && grep.exitCode <= 1 ? grep.stdout : await $.fs.read(transcript).catch(() => '')
-  return sessionTitle(text)
+async function persistTelemetryAndDashboard($: EngineInterface, state: NeckbeardHudState) {
+  if (!state.projectName) return
+  const startedAtMs = (await $.session.usage().catch(() => undefined))?.startedAt ?? (await $.clock.now())
+  const record = serializeSessionRecord(state, startedAtMs)
+  const dir = await resolveTelemetryDir($)
+  const jsonlFile = `${dir}/sessions.jsonl`
+  const existing = await $.fs.read(jsonlFile).catch(() => '')
+  const updatedJsonl = upsertJsonlLedger(existing, record)
+  await $.fs.write(jsonlFile, updatedJsonl)
+  const allRecords = parseJsonlRecords(updatedJsonl)
+  const html = renderDashboardHtml(allRecords, {}, await $.clock.now())
+  await $.fs.write(`${dir}/dashboard.html`, html)
 }
 
-async function readModel($: EngineInterface, transcript: string): Promise<string> {
-  if (transcript === '') return ''
-  const grep = await $.process.run(['grep', '-o', MODEL_PATTERN, transcript]).catch(() => undefined)
-  return grep?.exitCode === 0 ? mainModel(grep.stdout) : ''
+async function launchDashboardInBrowser($: EngineInterface) {
+  const dir = await resolveTelemetryDir($)
+  const jsonlFile = `${dir}/sessions.jsonl`
+  const existing = await $.fs.read(jsonlFile).catch(() => '')
+  const htmlFile = `${dir}/dashboard.html`
+  await $.fs.write(htmlFile, renderDashboardHtml(parseJsonlRecords(existing), {}, await $.clock.now()))
+  const isWin = (await $.env.get('OS')) === 'Windows_NT'
+  const isMac = !isWin && (await $.process.run(['uname'])).stdout.trim() === 'Darwin'
+  await $.process.run(isWin ? ['cmd', '/c', 'start', '', htmlFile] : [isMac ? 'open' : 'xdg-open', htmlFile])
 }
 
-async function findTranscript($: EngineInterface, session: string): Promise<string> {
-  const projects = `${await claudeDir($)}/projects`
-  const exists = (file: string) => $.fs.exists(file).catch(() => false)
-  const root = await $.session.root().catch(() => '')
-  const named = `${projects}/${root.replace(/[^a-zA-Z0-9]/g, '-')}/${session}.jsonl`
-  if (root !== '' && (await exists(named))) return named
-  const dirs = (await $.fs.list(projects).catch(() => [])).filter(d => d.kind === 'dir')
-  for (const dir of dirs) {
-    const file = `${projects}/${dir.name}/${session}.jsonl`
-    if (await exists(file)) return file
-  }
-  return ''
-}
-
-async function ledgerDir($: EngineInterface) {
-  return `${(await $.env.get('XDG_CONFIG_HOME')) ?? `${await home($)}/.config`}/neckbeard/band`
-}
-
-const ledgerFile = (dir: string, project: string) => `${dir}/${project.replace(/[^\w.-]/g, '_')}.csv`
-
-async function record($: EngineInterface, b: Band, options: Options) {
-  const startedAt = (await $.session.usage()).startedAt
-  const row = snapshot(b, startedAt)
-  if (options.ledger !== false && b.project !== '') {
-    const dir = await ledgerDir($)
-    const file = ledgerFile(dir, b.project)
-    const existing = await $.fs.read(file).catch(() => '')
-    await $.fs.write(file, upsertCsv(existing, row))
-    await writeBoard($, dir)
-  }
-}
-
-async function writeBoard($: EngineInterface, dir: string) {
-  const entries = await $.fs.list(dir).catch(() => [])
-  const texts = await Promise.all(entries.filter(f => f.kind === 'file' && f.name.endsWith('.csv')).map(f => $.fs.read(`${dir}/${f.name}`).catch(() => '')))
-  const file = `${dir}/board.html`
-  await $.fs.write(file, boardHtml(texts.flatMap(tasksFrom), await $.clock.now()))
-  return file
-}
-
-async function openBoard($: EngineInterface) {
-  const file = await writeBoard($, await ledgerDir($))
-  const windows = (await $.env.get('OS')) === 'Windows_NT'
-  const mac = !windows && (await $.process.run(['uname'])).stdout.trim() === 'Darwin'
-  await $.process.run(windows ? ['cmd', '/c', 'start', '', file] : [mac ? 'open' : 'xdg-open', file])
-}
-
-async function start($: EngineInterface): Promise<{ defs: Map<string, string>; boundaries: Set<string> }> {
-  const grep = await $.process.run(['git', 'grep', '--untracked', '-nE', GREP_DEFS]).catch(() => undefined)
-  const level = await readLevel($)
-  const details = (await $.store.get('details')) === true
+async function initializeHudSession($: EngineInterface) {
+  const grepRes = await $.process.run(['git', 'grep', '--untracked', '-nE', SYMBOL_GREP_REGEX]).catch(() => undefined)
+  const envLevel = (await $.env.get('NECKBEARD_LEVEL'))?.trim().toLowerCase()
+  const activeLevel = envLevel && SUPPORTED_LEVELS.includes(envLevel) ? envLevel : 'full'
+  const expandedDrawer = (await $.store.get('expandedDrawer')) === true
   const repo = await $.session.repo().catch(() => null)
-  const root = repo?.root ?? (await $.session.cwd())
-  const project = base(root)
-  const session = await $.session.id()
-  const baseline = await readProjectBaseline($, root)
-  const vibes = await readVibesMetrics($, root)
+  const rootDir = repo?.root ?? (await $.session.cwd())
+  const projectName = basenameOf(rootDir)
+  const sessionId = await $.session.id()
+  const wsCfg = await inspectWorkspaceConfig($, rootDir)
+  const vibes = await inspectVibesAnnotations($, rootDir)
   const usage = await $.session.usage().catch(() => undefined)
-  const csv = usage ? await $.fs.read(ledgerFile(await ledgerDir($), project)).catch(() => '') : ''
-  const key = usage ? taskKey(session, usage.startedAt) : ''
-  await update($, band, b =>
-    resume(
-      {
-        ...EMPTY,
-        ...b,
-        level,
-        details,
-        project,
-        session,
-        loadTarget: baseline.load,
-        vibesRisk: vibes.risk,
-        secFound: Math.max(b.secFound, vibes.found),
-        secFixed: Math.max(b.secFixed, vibes.fixed),
-        linesAdded: Math.max(b.linesAdded, vibes.added),
-        linesRemoved: Math.max(b.linesRemoved, vibes.removed),
-        cost: usage?.cost?.usd ?? b.cost,
-      },
-      csv,
-      key
-    )
-  )
+
+  await update($, hudAtom, (prev) => ({
+    ...INITIAL_HUD_STATE,
+    ...prev,
+    activeLevel,
+    expandedDrawer,
+    projectName,
+    sessionId,
+    loadEnvelope: wsCfg.load,
+    vibesMaxPrismRisk: vibes.maxRisk,
+    securityFindingsTotal: Math.max(prev.securityFindingsTotal, vibes.findings),
+    securityFindingsResolved: Math.max(prev.securityFindingsResolved, vibes.resolved),
+    linesInserted: Math.max(prev.linesInserted, vibes.inserted),
+    linesDeleted: Math.max(prev.linesDeleted, vibes.deleted),
+    baselineCostUsd: usage?.cost?.usd ?? prev.baselineCostUsd,
+  }))
+
   return {
-    defs: grep?.exitCode === 0 ? parseDefs(grep.stdout) : new Map(),
-    boundaries: baseline.boundaries,
+    symbolMap: grepRes?.exitCode === 0 ? indexWorkspaceSymbols(grepRes.stdout) : new Map<string, string>(),
+    knownBoundaries: wsCfg.knownBoundaries,
   }
 }
 
-export const register: Register = (on, options) => {
-  let known = new Map<string, string>()
+export const register: Register = (on) => {
+  let workspaceSymbols = new Map<string, string>()
   let baselineBoundaries = new Set<string>()
 
-  on('session.start', async ($, e, next) => {
-    const s = await start($)
-    known = s.defs
-    baselineBoundaries = s.boundaries
-    return next(e)
-  }).catch(($, e, next) => next(e))
+  on('session.start', async ($, evt, next) => {
+    const init = await initializeHudSession($)
+    workspaceSymbols = init.symbolMap
+    baselineBoundaries = init.knownBoundaries
+    return next(evt)
+  }).catch(($, evt, next) => next(evt))
 
-  on('command.run', { command: ['clear', 'resume', 'branch'] }, async ($, e, next) => {
-    const session = await $.session.id()
-    const result = await next(e)
-    if ((await $.session.id()) !== session) {
-      const s = await start($).catch(() => ({ defs: known, boundaries: baselineBoundaries }))
-      known = s.defs
-      baselineBoundaries = s.boundaries
+  on('command.run', { command: ['clear', 'resume', 'branch'] }, async ($, evt, next) => {
+    const prevId = await $.session.id()
+    const res = await next(evt)
+    if ((await $.session.id()) !== prevId) {
+      const init = await initializeHudSession($).catch(() => ({ symbolMap: workspaceSymbols, knownBoundaries: baselineBoundaries }))
+      workspaceSymbols = init.symbolMap
+      baselineBoundaries = init.knownBoundaries
     }
-    return result
-  }).catch(($, e, next) => next(e))
+    return res
+  }).catch(($, evt, next) => next(evt))
 
-  on('session.end', async ($, e, next) => {
-    if (e.reason === 'clear') await update($, band, b => ({ ...EMPTY, ...b, ...TASK }))
-    return next(e)
-  }).catch(($, e, next) => next(e))
-
-  on('prompt.submit', async ($, e, next) => {
-    const text = e.text.trim()
-    if (e.origin.kind !== 'plugin' && text !== '' && !text.startsWith('/')) {
-      const name = (text.split('\n')[0] ?? '').slice(0, 60)
-      await update($, band, b => (b.name === '' ? { ...EMPTY, ...b, name } : b))
+  on('prompt.submit', async ($, evt, next) => {
+    const clean = evt.text.trim()
+    if (evt.origin.kind !== 'plugin' && clean !== '' && !clean.startsWith('/')) {
+      const firstLine = (clean.split('\n')[0] ?? '').slice(0, 64)
+      await update($, hudAtom, (s) => (s.taskTitle === '' ? { ...s, taskTitle: firstLine } : s))
     }
-    return next(e)
-  }).catch(($, e, next) => next(e))
+    return next(evt)
+  }).catch(($, evt, next) => next(evt))
 
-  on('tool.call', async ($, e, next) => {
-    if (e.tool === 'Bash') {
-      const ran = await next(e)
-      if (ran.deny !== undefined) {
-        await update($, band, b => ({ ...b, guardBlocks: b.guardBlocks + 1, secFound: b.secFound + 1, secFixed: b.secFixed + 1 }))
-        return ran
+  on('tool.call', async ($, evt, next) => {
+    if (evt.tool === 'Bash') {
+      const outcome = await next(evt)
+      if (outcome.deny !== undefined) {
+        await update($, hudAtom, (s) => ({
+          ...s,
+          guardBlockCount: s.guardBlockCount + 1,
+          securityFindingsTotal: s.securityFindingsTotal + 1,
+          securityFindingsResolved: s.securityFindingsResolved + 1,
+        }))
+        return outcome
       }
-      if (isTestCommand(e.command)) {
-        const tests = { state: ran.isError ? ('fail' as const) : ('pass' as const), ...testCounts(ran.text ?? '') }
-        await update($, band, b => ({ ...b, tests }))
+      if (isTestRunnerCommand(evt.command)) {
+        const testStatus = evaluateTestOutput(outcome.text ?? '', Boolean(outcome.isError))
+        await update($, hudAtom, (s) => ({ ...s, testStatus }))
       }
-      return ran
+      return outcome
     }
 
-    if (e.tool !== 'Edit' && e.tool !== 'Write') return next(e)
+    if (evt.tool !== 'Edit' && evt.tool !== 'Write') return next(evt)
 
-    const file = e.file_path
+    const targetPath = evt.file_path
     const repo = await $.session.repo().catch(() => null)
-    const root = repo?.root ?? (await $.session.cwd())
-    if (!inProject(file, root)) return next(e)
-    const before = e.tool === 'Write' ? await $.fs.read(file).catch(() => '') : e.old_string
-    const after = e.tool === 'Write' ? e.content : e.new_string
-    const ran = await next(e)
-    if (ran.deny !== undefined) {
-      await update($, band, b => ({ ...b, guardBlocks: b.guardBlocks + 1, secFound: b.secFound + 1, secFixed: b.secFixed + 1 }))
-      return ran
+    const rootDir = repo?.root ?? (await $.session.cwd())
+    if (!isWithinWorkspace(targetPath, rootDir)) return next(evt)
+
+    const beforeText = evt.tool === 'Write' ? await $.fs.read(targetPath).catch(() => '') : evt.old_string
+    const afterText = evt.tool === 'Write' ? evt.content : evt.new_string
+    const outcome = await next(evt)
+
+    if (outcome.deny !== undefined) {
+      await update($, hudAtom, (s) => ({
+        ...s,
+        guardBlockCount: s.guardBlockCount + 1,
+        securityFindingsTotal: s.securityFindingsTotal + 1,
+        securityFindingsResolved: s.securityFindingsResolved + 1,
+      }))
+      return outcome
     }
-    if (ran.isError) return ran
+    if (outcome.isError) return outcome
 
-    const oldDefs = defsIn(file, before)
-    const newDefs = defsIn(file, after)
-    const created = isSource(file) ? newDefs.filter(n => !oldDefs.includes(n)) : []
-    const removed = oldDefs.filter(n => !newDefs.includes(n))
-    const reused = isSource(file) ? callsIn(addedLines(before, after), known, newDefs) : []
-    const delta = lineDelta(before, after)
+    const impact = measureDiffImpact(targetPath, beforeText, afterText, workspaceSymbols)
+    const relPath = toWorkspaceRelativePath(targetPath, rootDir)
+    const priorSinks = new Set(detectBoundarySinks(relPath, beforeText))
+    const newBoundarySinks = detectBoundarySinks(relPath, afterText).filter(
+      (sink) => !priorSinks.has(sink) && !baselineBoundaries.has(sink)
+    )
 
-    // Detect trust-boundary expansion introduced by this edit/write against baseline .neckbeard.json
-    const rel = relPath(file, root)
-    const beforeSinks = new Set(sinksIn(rel, before))
-    const addedSinks = sinksIn(rel, after).filter(s => !beforeSinks.has(s) && !baselineBoundaries.has(s))
-
-    await update($, band, b => ({
-      ...b,
-      reused: union(b.reused, reused),
-      created: union(b.created, created),
-      removed: union(b.removed, removed),
-      linesAdded: b.linesAdded + delta.added,
-      linesRemoved: b.linesRemoved + delta.removed,
-      newBoundaries: union(b.newBoundaries, addedSinks),
-      tests: isCode(file) && b.tests.state !== 'none' ? { ...b.tests, state: 'stale' as const } : b.tests,
+    await update($, hudAtom, (s) => ({
+      ...s,
+      reusedSymbols: mergeUnique(s.reusedSymbols, impact.reusedSymbols),
+      createdSymbols: mergeUnique(s.createdSymbols, impact.createdSymbols),
+      deletedSymbols: mergeUnique(s.deletedSymbols, impact.deletedSymbols),
+      linesInserted: s.linesInserted + impact.linesInserted,
+      linesDeleted: s.linesDeleted + impact.linesDeleted,
+      unreviewedBoundaries: mergeUnique(s.unreviewedBoundaries, newBoundarySinks),
+      testStatus:
+        isTrackedCodeFile(targetPath) && s.testStatus.verdict !== 'untested'
+          ? { ...s.testStatus, verdict: 'outdated' }
+          : s.testStatus,
     }))
 
-    return ran
-  }).catch(($, e, next) => next(e))
+    return outcome
+  }).catch(($, evt, next) => next(evt))
 
-  on('turn.complete', async ($, e, next) => {
-    const used = e.usage
-    if (e.agentId !== undefined) {
-      if (used) await update($, band, b => ({ ...EMPTY, ...b, tokens: addTokens(b.tokens ?? NO_TOKENS, used) }))
-      return next(e)
-    }
-
-    const usage = await $.session.usage()
-    const turns = await $.session.turns()
-    const { removed, transcript: saved } = await load($)
-    const session = await $.session.id()
-    const repo = await $.session.repo().catch(() => null)
-    const root = repo?.root ?? (await $.session.cwd())
-    const baseline = await readProjectBaseline($, root)
-    const vibes = await readVibesMetrics($, root)
-    const kept = base(saved) === `${session}.jsonl` && (await $.fs.exists(saved).catch(() => false))
-    const transcript = kept ? saved : await findTranscript($, session)
-    const title = await readTitle($, transcript)
-    const model = await readModel($, transcript)
-
-    const stillRemoved: string[] = []
-    const open: string[] = []
-    for (const name of removed) {
-      const grep = await $.process.run(['git', 'grep', '--untracked', '-nw', '-e', name]).catch(() => undefined)
-      const rows = hits(grep?.stdout ?? '')
-      if (rows.some(r => defsIn(r.file, r.text.trimStart()).includes(name))) continue
-      const call = new RegExp(`(?<![\\w$])${name.replace(/\$/g, '\\$')}\\s*\\(`)
-      const refs = rows.filter(r => call.test(r.text)).map(r => `${r.file}:${r.line}`)
-      if (refs.length > 0) {
-        stillRemoved.push(name)
-        open.push(...refs)
+  on('turn.complete', async ($, evt, next) => {
+    const turnUsage = evt.usage
+    if (evt.agentId !== undefined) {
+      if (turnUsage) {
+        await update($, hudAtom, (s) => ({
+          ...s,
+          tokenBuckets: accumulateTokenBuckets(s.tokenBuckets, turnUsage),
+        }))
       }
+      return next(evt)
     }
 
-    const b = await update($, band, x => {
-      const b = { ...EMPTY, ...x }
-      const cost = usage.cost?.usd ?? b.cost
-      const turn = cost >= b.cost ? cost - b.cost : cost
+    const sessionUsage = await $.session.usage()
+    const totalTurns = await $.session.turns()
+    const current = await readHud($)
+    const repo = await $.session.repo().catch(() => null)
+    const rootDir = repo?.root ?? (await $.session.cwd())
+    const wsCfg = await inspectWorkspaceConfig($, rootDir)
+    const vibes = await inspectVibesAnnotations($, rootDir)
+
+    // Verify if any deleted symbols still have unmigrated callers in the repository
+    const remainingDeleted: string[] = []
+    const unmigratedCallers: string[] = []
+    for (const sym of current.deletedSymbols) {
+      const grepRes = await $.process.run(['git', 'grep', '--untracked', '-nw', '-e', sym]).catch(() => undefined)
+      const lines = (grepRes?.stdout ?? '').split('\n').filter(Boolean)
+      const reDefined = lines.some((row) => {
+        const m = /^(.+?):(\d+):(.*)$/.exec(row)
+        return m ? extractSymbols(m[1] ?? '', (m[3] ?? '').trimStart()).includes(sym) : false
+      })
+      if (reDefined) continue
+      const callRe = new RegExp(`(?<![\\w$])${sym.replace(/\$/g, '\\$')}\\s*\\(`)
+      for (const row of lines) {
+        const m = /^(.+?):(\d+):(.*)$/.exec(row)
+        if (m && callRe.test(m[3] ?? '')) unmigratedCallers.push(`${m[1]}:${m[2]}`)
+      }
+      if (unmigratedCallers.length > 0) remainingDeleted.push(sym)
+    }
+
+    const updated = await update($, hudAtom, (s) => {
+      const currentTotalCost = sessionUsage.cost?.usd ?? s.baselineCostUsd
+      const turnDeltaCost = currentTotalCost >= s.baselineCostUsd ? currentTotalCost - s.baselineCostUsd : currentTotalCost
       return {
-        ...b,
-        transcript,
-        cost,
-        spent: usage.cost?.usd ?? b.spent + turn,
-        turns,
-        turnCosts: [...b.turnCosts, turn].slice(-20),
-        tokens: used ? addTokens(b.tokens, used) : b.tokens,
-        busyMs: b.busyMs + e.durationMs,
-        name: title ?? b.name,
-        model: model || b.model,
-        removed: stillRemoved,
-        openCallers: open,
-        loadTarget: baseline.load || b.loadTarget,
-        vibesRisk: vibes.risk ?? b.vibesRisk,
-        secFound: Math.max(b.secFound, vibes.found),
-        secFixed: Math.max(b.secFixed, vibes.fixed),
+        ...s,
+        baselineCostUsd: currentTotalCost,
+        taskCostUsd: sessionUsage.cost?.usd ?? s.taskCostUsd + turnDeltaCost,
+        turnCount: totalTurns,
+        recentTurnCosts: [...s.recentTurnCosts, turnDeltaCost].slice(-16),
+        tokenBuckets: turnUsage ? accumulateTokenBuckets(s.tokenBuckets, turnUsage) : s.tokenBuckets,
+        activeDurationMs: s.activeDurationMs + evt.durationMs,
+        deletedSymbols: remainingDeleted,
+        unmigratedCallers,
+        loadEnvelope: wsCfg.load || s.loadEnvelope,
+        vibesMaxPrismRisk: vibes.maxRisk ?? s.vibesMaxPrismRisk,
+        securityFindingsTotal: Math.max(s.securityFindingsTotal, vibes.findings),
+        securityFindingsResolved: Math.max(s.securityFindingsResolved, vibes.resolved),
       }
     })
-    await record($, b, options).catch(() => $.ui.status('neckbeard band: could not write the task ledger'))
 
-    return next(e)
-  }).catch(($, e, next) => next(e))
+    await persistTelemetryAndDashboard($, updated).catch(() =>
+      $.ui.status('neckbeard: failed to update local telemetry store')
+    )
+    return next(evt)
+  }).catch(($, evt, next) => next(evt))
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || (await bandHidden($))) return next(e)
-    const below = await next(e).catch(() => undefined)
+  on('ui.render', { component: 'AbovePrompt' }, async ($, evt, next) => {
+    if (evt.props.hasSurvey || (await isHudHidden($))) return next(evt)
+    const downstream = await next(evt).catch(() => undefined)
+    const state = await readHud($)
+    const reusePct = computeReusePercentage(state.reusedSymbols.length, state.createdSymbols.length)
+    const latestTurnCost = state.recentTurnCosts[state.recentTurnCosts.length - 1]
+    const avgTurnCost = state.turnCount > 0 ? state.taskCostUsd / state.turnCount : 0
 
-    const b = await load($)
-    const now = await $.clock.now()
-    const startedAt = (await $.session.usage().catch(() => undefined))?.startedAt ?? now
-    const reuse = percent(b.reused.length, b.created.length)
-    const avg = b.turns > 0 ? b.spent / b.turns : 0
-    const last = b.turnCosts[b.turnCosts.length - 1]
-
-    const setLevel = async (level: string) => {
-      await update($, band, x => ({ ...x, level }))
-      await run($, 'neckbeard:neckbeard', level)
+    const switchLevel = async (lvl: string) => {
+      await update($, hudAtom, (s) => ({ ...s, activeLevel: lvl }))
+      await $.command.run({ command: 'neckbeard:neckbeard', args: lvl })
     }
-    const toggle = async () => {
-      await update($, band, x => ({ ...x, details: !x.details }))
-      await $.store.set('details', !b.details)
+    const toggleDrawer = async () => {
+      await update($, hudAtom, (s) => ({ ...s, expandedDrawer: !s.expandedDrawer }))
+      await $.store.set('expandedDrawer', !state.expandedDrawer)
     }
-    const review = () => run($, 'neckbeard:neckbeard-review')
-    const audit = () => run($, 'neckbeard:neckbeard-audit')
-    const board = () => openBoard($).catch(() => $.ui.toast('neckbeard band: could not open the board'))
-    const copy = async () => {
-      const done = await $.ui.copy({ text: markdown(snapshot(await load($), startedAt)), surface: e.surface })
-      $.ui.toast(done.isCopied ? 'Task copied as Markdown' : `Copy failed: ${done.reason}`)
+    const triggerReview = () => $.command.run({ command: 'neckbeard:neckbeard-review', args: '' })
+    const triggerAudit = () => $.command.run({ command: 'neckbeard:neckbeard-audit', args: '' })
+    const openCommandCenter = () =>
+      launchDashboardInBrowser($).catch(() => $.ui.toast('neckbeard: unable to launch dashboard.html'))
+    const copyMarkdownSummary = async () => {
+      const nowMs = await $.clock.now()
+      const rec = serializeSessionRecord(await readHud($), nowMs)
+      const copied = await $.ui.copy({ text: renderMarkdownReport(rec), surface: evt.surface })
+      $.ui.toast(copied.isCopied ? 'NeckBeard telemetry report copied' : `Copy failed: ${copied.reason}`)
     }
 
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const width = e.surface === 'terminal' ? e.props.bodyColumns : undefined
-    const stack = (mine: NonNullable<typeof below>) => (below ? <Box flexDirection="column">{mine}{below}</Box> : mine)
+    const { Box, Text, Button } = $.ui.resolve(evt)
+    const termWidth = evt.surface === 'terminal' ? evt.props.bodyColumns : undefined
+    const compose = (hudNode: NonNullable<typeof downstream>) =>
+      downstream ? (
+        <Box flexDirection="column">
+          {hudNode}
+          {downstream}
+        </Box>
+      ) : (
+        hudNode
+      )
 
-    const testsText =
-      b.tests.state === 'pass'
-        ? `✓ ${b.tests.passed ?? ''} tests`
-        : b.tests.state === 'fail'
-          ? `✗ ${b.tests.failed ?? ''} failed`
-          : b.tests.state === 'stale'
-            ? 'no test since change'
-            : ''
-    const testsColor = b.tests.state === 'pass' ? 'success' : b.tests.state === 'fail' ? 'error' : undefined
-    const hasOpen = b.openCallers.length > 0
-    const hasNewBounds = b.newBoundaries.length > 0
-
-    if (!b.details) {
-      return stack(
-        <Box flexDirection="row" alignItems="center" gap={2} width={width}>
-          <Button key="level" plain onPress={toggle}>
-            <Text color={b.level === 'off' ? 'inactive' : 'suggestion'}>●</Text> {b.level}
+    if (!state.expandedDrawer) {
+      return compose(
+        <Box flexDirection="row" alignItems="center" gap={2} width={termWidth}>
+          <Button key="nb-lvl" plain onPress={toggleDrawer}>
+            <Text color={state.activeLevel === 'off' ? 'inactive' : 'success'}>●</Text> 🧔 {state.activeLevel}
           </Button>
-          <Text>${b.spent.toFixed(2)}</Text>
-          {last !== undefined && <Text dimColor>last ${last.toFixed(2)}</Text>}
-          <Text dimColor>{elapsed(b.busyMs)}</Text>
-          {reuse !== undefined && <Text>{reuse}% reuse</Text>}
-          {(b.linesAdded > 0 || b.linesRemoved > 0) && <Text dimColor>+{b.linesAdded}/-{b.linesRemoved}</Text>}
-          {b.guardBlocks > 0 && <Text color="success">🛡️ {b.guardBlocks} blocked</Text>}
-          {b.secFound > 0 && <Text color={b.secFixed >= b.secFound ? 'success' : 'warning'}>🔒 {b.secFixed}/{b.secFound} sec</Text>}
-          {b.vibesRisk !== null && <Text color={b.vibesRisk >= 0.6 ? 'warning' : 'success'}>VIBES {b.vibesRisk.toFixed(2)}</Text>}
-          {hasNewBounds && <Text color="warning">⚠ +{b.newBoundaries.length} boundary</Text>}
-          {hasOpen && <Text color="warning">⚠ {b.openCallers.length} callers open</Text>}
-          {testsText !== '' && (
-            <Text color={testsColor} dimColor={b.tests.state === 'stale'}>
-              {testsText}
+          <Text>${state.taskCostUsd.toFixed(2)}</Text>
+          <Text dimColor>{formatDurationMs(state.activeDurationMs)}</Text>
+          {reusePct !== null && <Text>{reusePct}% reuse</Text>}
+          {(state.linesInserted > 0 || state.linesDeleted > 0) && (
+            <Text dimColor>
+              +{state.linesInserted}/-{state.linesDeleted} LOC
             </Text>
           )}
+          {state.guardBlockCount > 0 && <Text color="success">🛡️ {state.guardBlockCount} blocked</Text>}
+          {state.vibesMaxPrismRisk !== null && (
+            <Text color={state.vibesMaxPrismRisk >= 0.6 ? 'warning' : 'success'}>
+              PRISM {state.vibesMaxPrismRisk.toFixed(2)}
+            </Text>
+          )}
+          {state.unreviewedBoundaries.length > 0 && (
+            <Text color="warning">⚠ +{state.unreviewedBoundaries.length} boundary</Text>
+          )}
+          {state.unmigratedCallers.length > 0 && (
+            <Text color="warning">⚠ {state.unmigratedCallers.length} callers</Text>
+          )}
           <Box flexGrow={1} />
-          <Button key="review" plain label="Review" onPress={review} />
-          <Button key="audit" plain label="Audit" onPress={audit} />
-          <Button key="board" plain label="Board" onPress={board} />
-          <Button key="details" plain label="Details" onPress={toggle} />
+          <Button key="nb-rev" plain label="Review" onPress={triggerReview} />
+          <Button key="nb-aud" plain label="Audit" onPress={triggerAudit} />
+          <Button key="nb-cmd" plain label="Dashboard" onPress={openCommandCenter} />
+          <Button key="nb-exp" plain label="HUD" onPress={toggleDrawer} />
         </Box>
       )
     }
 
-    const cols: Col[] = [
-      { key: 'cost', label: 'cost', value: `$${b.spent.toFixed(2)}`, sub: last === undefined ? '' : `last $${last.toFixed(2)} · ⌀ $${avg.toFixed(2)}` },
-      { key: 'tokens', label: 'tokens', value: fmtTokens(totalTokens(b.tokens)), sub: `${b.turns} ${b.turns === 1 ? 'turn' : 'turns'}` },
-      { key: 'time', label: 'agent time', value: elapsed(b.busyMs), sub: b.turns > 0 ? `⌀ ${elapsed(b.busyMs / b.turns)} / turn` : '' },
+    const cards: HudMetricCard[] = [
       {
-        key: 'refactor',
-        label: 'reuse & delta',
-        value: reuse !== undefined ? `${reuse}% reuse` : `+${b.linesAdded}/-${b.linesRemoved}`,
-        sub: `${b.reused.length} reused · ${b.created.length} new`,
+        id: 'cost',
+        heading: 'cost & turns',
+        primaryValue: `$${state.taskCostUsd.toFixed(2)}`,
+        secondaryNote:
+          latestTurnCost === undefined ? `${state.turnCount} turns` : `last $${latestTurnCost.toFixed(2)} · ⌀ $${avgTurnCost.toFixed(2)}`,
       },
       {
-        key: 'security',
-        label: 'security & guard',
-        value: `${b.guardBlocks} blocked`,
-        sub: `${b.secFixed}/${b.secFound} fixed${b.vibesRisk !== null ? ` · PRISM ${b.vibesRisk.toFixed(2)}` : ''}`,
-        tone: b.secFound > b.secFixed ? 'warning' : 'success',
+        id: 'tokens',
+        heading: 'tokens & time',
+        primaryValue: formatTokenCount(sumTokenBuckets(state.tokenBuckets)),
+        secondaryNote: formatDurationMs(state.activeDurationMs),
+      },
+      {
+        id: 'shrink',
+        heading: 'code minimalism',
+        primaryValue: reusePct !== null ? `${reusePct}% reuse` : `+${state.linesInserted}/-${state.linesDeleted} LOC`,
+        secondaryNote: `${state.reusedSymbols.length} reused · ${state.createdSymbols.length} new`,
+      },
+      {
+        id: 'shield',
+        heading: 'guard & vibes',
+        primaryValue: `${state.guardBlockCount} blocked`,
+        secondaryNote: `${state.securityFindingsResolved}/${state.securityFindingsTotal} fixed${
+          state.vibesMaxPrismRisk !== null ? ` · PRISM ${state.vibesMaxPrismRisk.toFixed(2)}` : ''
+        }`,
+        statusTone: state.securityFindingsTotal > state.securityFindingsResolved ? 'warning' : 'success',
       },
     ]
-    if (b.loadTarget) {
-      cols.push({ key: 'load', label: 'load target', value: b.loadTarget.slice(0, 18), sub: '.neckbeard.json' })
+
+    if (state.loadEnvelope) {
+      cards.push({
+        id: 'scale',
+        heading: 'target load',
+        primaryValue: state.loadEnvelope.slice(0, 18),
+        secondaryNote: 'right-sized (.neckbeard.json)',
+      })
     }
-    if (hasNewBounds) {
-      cols.push({ key: 'boundaries', label: 'boundary drift', value: `+${b.newBoundaries.length} new`, sub: b.newBoundaries.slice(0, 2).join(', '), tone: 'warning' })
+    if (state.unreviewedBoundaries.length > 0) {
+      cards.push({
+        id: 'drift',
+        heading: 'boundary drift',
+        primaryValue: `+${state.unreviewedBoundaries.length} new`,
+        secondaryNote: state.unreviewedBoundaries.slice(0, 2).join(', '),
+        statusTone: 'warning',
+      })
     }
-    if (hasOpen) {
-      cols.push({ key: 'callers', label: 'callers', value: `${b.openCallers.length} open`, sub: b.openCallers.slice(0, 2).join(', '), tone: 'warning' })
-    }
-    if (b.tests.state !== 'none') {
-      cols.push({
-        key: 'tests',
-        label: 'tests',
-        value: testsLabel(b.tests),
-        sub: b.tests.state === 'pass' ? 'after last change' : b.tests.state === 'fail' ? 'last run' : 'code changed since',
-        tone: b.tests.state === 'pass' ? 'success' : b.tests.state === 'fail' ? 'error' : undefined,
+    if (state.testStatus.verdict !== 'untested') {
+      cards.push({
+        id: 'tests',
+        heading: 'gate tests',
+        primaryValue: formatTestStatusBadge(state.testStatus),
+        secondaryNote: state.testStatus.verdict === 'passing' ? 'verified' : 'check required',
+        statusTone: state.testStatus.verdict === 'passing' ? 'success' : 'error',
       })
     }
 
-    let metrics = (
+    let detailsNode = (
       <Box flexDirection="column">
         <Text dimColor wrap="truncate-end">
-          {'─'.repeat(e.props.bodyColumns)}
+          {'─'.repeat(evt.props.bodyColumns)}
         </Text>
         <Box flexDirection="row" gap={2}>
-          {cols.map(c => (
-            <Box key={c.key} flexDirection="column" {...(width === undefined ? { flexGrow: 1 } : { width: Math.max(10, Math.floor(width / cols.length) - 2) })}>
-              <Text dimColor>{c.label}</Text>
-              <Text bold color={c.tone}>
-                {c.value}
+          {cards.map((c) => (
+            <Box
+              key={c.id}
+              flexDirection="column"
+              {...(termWidth === undefined ? { flexGrow: 1 } : { width: Math.max(10, Math.floor(termWidth / cards.length) - 2) })}
+            >
+              <Text dimColor>{c.heading}</Text>
+              <Text bold color={c.statusTone}>
+                {c.primaryValue}
               </Text>
               <Text dimColor wrap="truncate-end">
-                {c.sub}
+                {c.secondaryNote}
               </Text>
             </Box>
           ))}
         </Box>
       </Box>
     )
-    if (e.surface === 'desktop') {
-      const { Svg } = $.ui.resolve(e)
-      metrics = <Svg source={metricsSvg(cols, b.turnCosts)} alt={cols.map(c => `${c.label} ${c.value}`).join(', ')} />
+
+    if (evt.surface === 'desktop') {
+      const { Svg } = $.ui.resolve(evt)
+      detailsNode = (
+        <Svg
+          source={renderDesktopHudSvg(cards)}
+          alt={cards.map((c) => `${c.heading}: ${c.primaryValue}`).join(', ')}
+        />
+      )
     }
 
-    return stack(
-      <Box flexDirection="column" width={width} gap={e.surface === 'desktop' ? 1 : 0}>
+    return compose(
+      <Box flexDirection="column" width={termWidth} gap={evt.surface === 'desktop' ? 1 : 0}>
         <Box flexDirection="row" alignItems="center" gap={1}>
-          {LEVELS.map(level => (
+          {SUPPORTED_LEVELS.map((lvl) => (
             <Button
-              key={`level-${level}`}
-              label={level}
-              {...(level === b.level ? { variant: 'primary' as const } : { plain: true as const, dimColor: true })}
-              onPress={() => setLevel(level)}
+              key={`nb-mode-${lvl}`}
+              label={lvl}
+              {...(lvl === state.activeLevel ? { variant: 'primary' as const } : { plain: true as const, dimColor: true })}
+              onPress={() => switchLevel(lvl)}
             />
           ))}
           <Box flexGrow={1} />
-          <Button key="copy" plain label="Copy" onPress={copy} />
-          <Button key="review" plain label="Review" onPress={review} />
-          <Button key="audit" plain label="Audit" onPress={audit} />
-          <Button key="board" plain label="Board" onPress={board} />
-          <Button key="details" plain label="Compact" onPress={toggle} />
+          <Button key="nb-copy" plain label="Copy Report" onPress={copyMarkdownSummary} />
+          <Button key="nb-rev" plain label="Review" onPress={triggerReview} />
+          <Button key="nb-aud" plain label="Audit" onPress={triggerAudit} />
+          <Button key="nb-dash" plain label="Dashboard" onPress={openCommandCenter} />
+          <Button key="nb-fold" plain label="Compact" onPress={toggleDrawer} />
         </Box>
-        {metrics}
+        {detailsNode}
       </Box>
     )
-  }).catch(($, e, next) => next(e))
+  }).catch(($, evt, next) => next(evt))
 }

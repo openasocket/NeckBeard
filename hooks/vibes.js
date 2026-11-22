@@ -1,8 +1,12 @@
 'use strict';
-// VIBES Protocol (.ai-audit/) telemetry reader & visualizer data extractor.
-// When .ai-audit/manifest.json or .ai-audit/annotations.jsonl is present, NeckBeard
-// defaults to using VIBES provenance, VERIFY attestations, PRISM risk scores, EVOLVE
-// decisions, and TRACE incident records for session/project instrumentation.
+// VIBES Protocol (.ai-audit/) telemetry reader & 5-pillar visualizer data extractor.
+// Supports the complete VIBES v1.0/v1.1, VERIFY v1.0, PRISM v1.0, EVOLVE v1.0, and TRACE v1.0 schemas:
+// - manifest.json: both `entries` content-addressed hash map (environment, reasoning, command, prompt, decision)
+//   and top-level `decisions` / `sessions`.
+// - annotations.jsonl: `type: "line" | "session" | "decision" | "incident"`, `action: "create" | "modify" | "delete" | "attest" | "verify" | "block" | "analyze" | "proxy"`,
+//   `line_start` / `line_end` range attribution, `assurance_level` ("high" | "medium" | "low"),
+//   `environment_hash` / `command_hash` / `reasoning_hash` / `prompt_hash` / `commit_hash` linkage,
+//   and PRISM `risk_score`, `risk_band`, and `risk_factors`.
 
 const fs = require('fs');
 const path = require('path');
@@ -49,7 +53,21 @@ function readJsonlSafe(file) {
 function countDirEntriesSafe(dirPath) {
   try {
     if (!fs.existsSync(dirPath)) return 0;
-    return fs.readdirSync(dirPath).filter((e) => !e.startsWith('.')).length;
+    let total = 0;
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      if (e.isDirectory()) {
+        try {
+          total += fs.readdirSync(path.join(dirPath, e.name)).filter((x) => !x.startsWith('.')).length;
+        } catch {
+          total += 1;
+        }
+      } else {
+        total += 1;
+      }
+    }
+    return total;
   } catch {
     return 0;
   }
@@ -89,9 +107,45 @@ function readVibesTelemetry(root = process.cwd()) {
   const filesTouched = new Set();
   const fileStatsMap = new Map();
   const prismBuckets = { low: 0, moderate: 0, high: 0, critical: 0 };
+  const assuranceBreakdown = { high: 0, medium: 0, low: 0 };
+  const manifestCounts = { environment: 0, reasoning: 0, command: 0, prompt: 0, decision: 0, total: 0 };
+  const envModels = new Map();
+  const manifestSummaries = new Map();
   const decisionRecords = [];
   const incidentRecords = [];
   const recentAnnotations = [];
+
+  // Parse content-addressed manifest.entries hash table (VIBES v1.0 / v1.1 standard)
+  if (manifest.entries && typeof manifest.entries === 'object') {
+    for (const [hash, entry] of Object.entries(manifest.entries)) {
+      if (!entry || typeof entry !== 'object') continue;
+      manifestCounts.total += 1;
+      const eType = String(entry.type || '');
+      if (eType in manifestCounts) manifestCounts[eType] += 1;
+
+      if (eType === 'environment') {
+        const modelLabel = (entry.model_name && entry.model_name !== 'unknown' ? entry.model_name : '') ||
+          entry.tool_name || '';
+        if (modelLabel) envModels.set(hash, modelLabel);
+      } else if (eType === 'reasoning' && typeof entry.reasoning_text === 'string') {
+        const cleanLine = entry.reasoning_text.replace(/[*#`]/g, '').trim().split('\n').find((l) => l.trim().length > 4);
+        if (cleanLine) manifestSummaries.set(hash, cleanLine.trim().slice(0, 76));
+      } else if (eType === 'command') {
+        const cmdSummary = entry.command_output_summary || entry.command_text || entry.command_type || '';
+        if (cmdSummary) manifestSummaries.set(hash, String(cmdSummary).trim().split('\n')[0].slice(0, 76));
+      } else if (eType === 'decision') {
+        decisions += 1;
+        if (decisionRecords.length < 15) {
+          decisionRecords.push({
+            id: hash.slice(0, 10),
+            title: String(entry.title || entry.summary || entry.rationale || entry.decision_text || 'Manifest decision record').slice(0, 96),
+            status: String(entry.status || 'attested'),
+            timestamp: String(entry.created_at || ''),
+          });
+        }
+      }
+    }
+  }
 
   if (Array.isArray(manifest.decisions)) {
     for (const d of manifest.decisions.slice(0, 15)) {
@@ -135,7 +189,7 @@ function readVibesTelemetry(root = process.cwd()) {
       if (delta > 0 && delta <= 30 * 60000) s.agentMs += delta;
       s.lastMs = ts;
     }
-    if (model && !s.model) s.model = model;
+    if (model && (!s.model || s.model === 'unknown')) s.model = model;
     return s;
   };
 
@@ -158,22 +212,55 @@ function readVibesTelemetry(root = process.cwd()) {
     const tsRaw = a.timestamp || a.created_at || a.started_at;
     const ts = tsRaw ? Date.parse(tsRaw) : NaN;
     const sid = a.session_id || a.sessionId || manifest.session_id || 'vibes-default';
-    const model = a.model || a.agent_model || (a.agent && a.agent.model) || '';
+    const resolvedEnvModel = (a.environment_hash && envModels.get(a.environment_hash)) || '';
+    const model = (a.model && a.model !== 'unknown' ? a.model : '') ||
+      a.agent_model || (a.agent && a.agent.model) || resolvedEnvModel || a.agent_name || '';
     const s = ensureSession(sid, Number.isFinite(ts) ? ts : undefined, model);
     s.turns += 1;
 
-    const summaryText = String(a.prompt || a.intent || a.summary || a.description || '').split('\n')[0].slice(0, 72);
-    if (!s.name && summaryText) s.name = summaryText.slice(0, 60);
+    const linkedSummary = (a.reasoning_hash && manifestSummaries.get(a.reasoning_hash)) ||
+      (a.command_hash && manifestSummaries.get(a.command_hash)) || '';
+    const summaryText = String(
+      a.prompt || a.intent || a.summary || a.description || linkedSummary ||
+      (a.action && a.file_path ? `${a.action} ${a.file_path}` : a.action || a.type || '')
+    ).split('\n')[0].slice(0, 76);
+    if (!s.name && summaryText && !summaryText.endsWith('session ended')) {
+      s.name = summaryText.slice(0, 60);
+    }
 
-    const isVerified = Boolean(a.verified === true || a.status === 'verified' || a.attestation_id || a.dsse_hash);
+    const assurance = String(a.assurance_level || '').toLowerCase();
+    if (assurance === 'high') assuranceBreakdown.high += 1;
+    else if (assurance === 'medium') assuranceBreakdown.medium += 1;
+    else if (assurance === 'low') assuranceBreakdown.low += 1;
+
+    const isVerified = Boolean(
+      a.verified === true ||
+      a.status === 'verified' ||
+      a.action === 'attest' ||
+      a.action === 'verify' ||
+      assurance === 'high' ||
+      a.attestation_id ||
+      a.dsse_hash ||
+      (a.command_hash && a.environment_hash)
+    );
     if (isVerified) verifiedCount += 1;
 
     const file = a.file_path || a.file || a.path;
-    const added = (typeof a.lines_added === 'number' ? a.lines_added : 0) ||
+    const lineRangeCount = (a.line_start != null && a.line_end != null)
+      ? Math.max(1, Number(a.line_end) - Number(a.line_start) + 1)
+      : 0;
+
+    let added = (typeof a.lines_added === 'number' ? a.lines_added : 0) ||
       countRangeLines(a.created_lines || a.added_lines || (a.changes && a.changes.created)) +
       countRangeLines(a.modified_lines || (a.changes && a.changes.modified));
-    const removed = (typeof a.lines_removed === 'number' ? a.lines_removed : 0) ||
+    let removed = (typeof a.lines_removed === 'number' ? a.lines_removed : 0) ||
       countRangeLines(a.deleted_lines || a.removed_lines || (a.changes && a.changes.deleted));
+
+    if (added === 0 && removed === 0 && lineRangeCount > 0) {
+      if (a.action === 'delete') removed = lineRangeCount;
+      else added = lineRangeCount;
+    }
+
     linesAdded += added;
     linesRemoved += removed;
     s.linesAdded += added;
@@ -218,30 +305,31 @@ function readVibesTelemetry(root = process.cwd()) {
     }
     if (typeof a.cost_usd === 'number') s.costUsd = (s.costUsd || 0) + a.cost_usd;
 
-    if (a.type === 'decision' || a.record_type === 'decision') {
+    if (a.type === 'decision' || a.record_type === 'decision' || a.decision_hash) {
       decisions += 1;
       if (decisionRecords.length < 15) {
         decisionRecords.push({
-          id: String(a.id || a.decision_id || `DEC-${decisions}`),
+          id: String(a.id || a.decision_id || (a.decision_hash && a.decision_hash.slice(0, 10)) || `DEC-${decisions}`),
           title: summaryText || 'Agent decision record',
-          status: String(a.status || 'recorded'),
+          status: String(a.status || (isVerified ? 'attested' : 'recorded')),
           timestamp: String(tsRaw || ''),
         });
       }
     }
 
-    if (a.type === 'incident' || a.record_type === 'incident' || a.ioc_id || a.trace_incident) {
+    if (a.type === 'incident' || a.record_type === 'incident' || a.ioc_id || a.trace_incident || a.action === 'block') {
       traceIncidents += 1;
       s.secFound += 1;
-      const isResolved = Boolean(a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed');
+      const isResolved = Boolean(a.resolved === true || a.status === 'resolved' || a.status === 'mitigated' || a.status === 'closed' || a.action === 'block');
       if (isResolved) {
         traceResolved += 1;
         s.secFixed += 1;
       }
       if (incidentRecords.length < 15) {
+        const factorSignal = Array.isArray(a.risk_factors) && a.risk_factors[0] && a.risk_factors[0].signal;
         incidentRecords.push({
-          id: String(a.id || a.incident_id || `INC-${traceIncidents}`),
-          iocId: String(a.ioc_id || a.rule_id || 'TRACE-IOC'),
+          id: String(a.id || a.incident_id || (a.annotation_id && String(a.annotation_id).slice(0, 10)) || `INC-${traceIncidents}`),
+          iocId: String(a.ioc_id || a.rule_id || factorSignal || (a.action === 'block' ? 'VIBES-BLOCK' : 'TRACE-IOC')),
           severity: String(a.severity || (risk && risk >= 0.8 ? 'critical' : 'high')),
           status: isResolved ? 'resolved' : String(a.status || 'open'),
           summary: summaryText || String(a.ioc_id || 'TRACE security incident'),
@@ -250,25 +338,58 @@ function readVibesTelemetry(root = process.cwd()) {
       }
     }
 
-    recentAnnotations.push({
-      sessionId: String(sid).slice(0, 12),
-      timestamp: String(tsRaw || ''),
-      model: String(model || 'agent'),
-      file: String(file || '(session-level)'),
-      linesAdded: added,
-      linesRemoved: removed,
-      riskScore: risk !== null && Number.isFinite(risk) ? +risk.toFixed(2) : null,
-      verified: isVerified,
-      summary: summaryText || 'Annotated agent edit',
-    });
+    if (file || risk !== null || a.type !== 'session') {
+      recentAnnotations.push({
+        sessionId: String(sid).slice(0, 14),
+        timestamp: String(tsRaw || '').replace('T', ' ').slice(0, 19),
+        model: String(model || 'agent'),
+        file: String(file || (a.action ? `[${a.action}]` : '(session-level)')),
+        linesAdded: added,
+        linesRemoved: removed,
+        riskScore: risk !== null && Number.isFinite(risk) ? +risk.toFixed(2) : null,
+        verified: isVerified,
+        summary: summaryText || 'Annotated agent turn',
+      });
+    }
   }
 
   const incDirCount = countDirEntriesSafe(path.join(dir, 'incidents'));
   traceIncidents = Math.max(traceIncidents, incDirCount);
-  const blobsCount = countDirEntriesSafe(path.join(dir, 'blobs'));
-  const attestationsCount = countDirEntriesSafe(path.join(dir, 'attestations'));
+  const blobsCount = countDirEntriesSafe(path.join(dir, 'blobs')) || manifestCounts.total;
+  const attestationsCount = countDirEntriesSafe(path.join(dir, 'attestations')) +
+    countDirEntriesSafe(path.join(dir, 'provenance')) +
+    countDirEntriesSafe(path.join(dir, 'evidence')) ||
+    assuranceBreakdown.high;
   const iocRulesCount = countDirEntriesSafe(path.join(dir, 'iocs.d'));
   const hasAuditDb = fs.existsSync(path.join(dir, 'audit.db')) || fs.existsSync(path.join(dir, 'wal'));
+
+  // Synthesize EVOLVE summary entries when manifest.entries contains reasoning/command provenance
+  if (decisionRecords.length === 0 && manifestCounts.total > 0) {
+    if (manifestCounts.reasoning > 0) {
+      decisionRecords.push({
+        id: 'VIBES-REASON',
+        title: `${manifestCounts.reasoning} content-addressed agent reasoning chains hashed in .ai-audit/manifest.json`,
+        status: 'attested',
+        timestamp: '',
+      });
+    }
+    if (manifestCounts.command > 0) {
+      decisionRecords.push({
+        id: 'VIBES-CMD',
+        title: `${manifestCounts.command} tool/command execution records hashed in .ai-audit/manifest.json`,
+        status: 'attested',
+        timestamp: '',
+      });
+    }
+    if (manifestCounts.environment > 0) {
+      decisionRecords.push({
+        id: 'VIBES-ENV',
+        title: `${manifestCounts.environment} agent runtime environment snapshots hashed in .ai-audit/manifest.json`,
+        status: 'attested',
+        timestamp: '',
+      });
+    }
+  }
 
   const fileHotspots = [...fileStatsMap.values()]
     .sort((a, b) => (b.maxRisk - a.maxRisk) || ((b.linesAdded + b.linesRemoved) - (a.linesAdded + a.linesRemoved)))
@@ -282,12 +403,17 @@ function readVibesTelemetry(root = process.cwd()) {
     attestationsCount,
     iocRulesCount,
     hasAuditDb,
+    manifestCounts,
+    assuranceBreakdown,
     prismBuckets,
     fileHotspots,
     decisionRecords,
     incidentRecords,
     recentAnnotations: recentAnnotations.slice(-16).reverse(),
-    sessions: [...sessions.values()].map((s) => ({ ...s, filesCount: s.files.size, files: undefined })),
+    sessions: [...sessions.values()]
+      .sort((a, b) => (b.startedMs || 0) - (a.startedMs || 0))
+      .slice(0, 250)
+      .map((s) => ({ ...s, filesCount: s.files.size, files: undefined })),
     maxPrismRisk: +maxPrismRisk.toFixed(2),
     highRiskCount,
     traceIncidents,

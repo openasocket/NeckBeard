@@ -816,15 +816,16 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
     const wsCfg = readProjectConfig(wsPath, env);
     if (!isCurrent && !wsHasVibes && !wsCfg) continue;
     const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };
-    const wsVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;
+    const rawVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;
+    const compactVibes = rawVibes ? { ...rawVibes, sessions: undefined } : null;
     workspacesMeta[projName] = {
       load: (wsCfg && wsCfg.load) || '',
       boundaryLoad: (wsCfg && wsCfg.boundaryLoad) || {},
       boundaries: (wsCfg && wsCfg.boundaries) || (isCurrent ? buildBoundaryMap(wsPath) : { external: {}, internal: {} }),
       driftAdded: (wsDrift && wsDrift.added) || [],
-      prismRisk: wsVibes ? wsVibes.maxPrismRisk : null,
-      vibesDecisions: wsVibes ? wsVibes.decisions : 0,
-      vibes: wsVibes,
+      prismRisk: rawVibes ? rawVibes.maxPrismRisk : null,
+      vibesDecisions: rawVibes ? rawVibes.decisions : 0,
+      vibes: compactVibes,
     };
   }
 

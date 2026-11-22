@@ -358,7 +358,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     <div class="kpis">
       <div class="panel"><div class="m-tag"><span>API Spend &amp; Unit Economics</span><span style="color:var(--emerald)">ECONOMICS</span></div><div class="m-val" id="m-cost">$0.00</div><div class="m-sub" id="m-cost-unit">$0.00 / session · $0.00 / turn</div><div class="m-comp" id="m-cost-comp">100% of portfolio spend</div></div>
       <div class="panel"><div class="m-tag"><span>Prompt-Cache Dollar Savings</span><span style="color:var(--cyan)">CACHE ROI</span></div><div class="m-val" id="m-saved" style="color:var(--cyan)">$0.00 saved</div><div class="m-sub" id="m-cache">0% cache hit rate · 0 tokens</div><div class="m-comp" id="m-cache-comp">Prompt caching efficiency</div></div>
-      <div class="panel"><div class="m-tag"><span>Agent Compute vs. Wall-Clock Time</span><span style="color:var(--amber)">VELOCITY</span></div><div class="m-val" id="m-time">0h 0m</div><div class="m-sub" id="m-turns">0 sessions · 0 turns</div><div class="m-comp" id="m-load">Target load: unset</div></div>
+      <div class="panel"><div class="m-tag"><span>Agent Compute vs. Wall-Clock Time</span><span style="color:var(--amber)">VELOCITY</span></div><div class="m-val" id="m-time">0h 0m</div><div class="m-sub" id="m-turns">0 sessions · 0 turns</div><div class="m-comp" id="m-load">Agent vs. wall-clock work volume</div></div>
       <div class="panel"><div class="m-tag"><span>Security Shield &amp; Code Delta</span><span style="color:var(--emerald)">3 GATES</span></div><div class="m-val" id="m-sec">0 blocked</div><div class="m-sub" id="m-loc">+0 / -0 LOC · 0/0 issues fixed</div><div class="m-comp" id="m-vibes">PreToolUse &amp; VIBES status</div></div>
     </div>
 
@@ -989,7 +989,7 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
       else{vPill.style.display='none'}
     }
     var shCost=portStats.cost>0?((wsStats.cost/portStats.cost)*100).toFixed(1):'100.0';
-    el('st-subtitle').textContent=activeWorkspace?(wsStats.sessions+' sessions · '+wsStats.turns+' turns · '+fmtUsd(wsStats.cost)+' ('+shCost+'% of all workspaces) · Load target: '+(wm.load||'unset')):(portStats.sessions+' total sessions across '+el('ws-total-cnt').textContent+' workspaces · '+fmtUsd(portStats.cost)+' total spend · '+fmtUsd(portStats.saved)+' saved by prompt caching');
+    el('st-subtitle').textContent=activeWorkspace?(wsStats.sessions+' sessions · '+wsStats.turns+' turns · '+fmtDur(wsStats.dur)+' agent time ('+fmtDur(wsStats.wallDur)+' wall) · '+fmtUsd(wsStats.cost)+' ('+shCost+'% of all workspaces)'):(portStats.sessions+' total sessions across '+el('ws-total-cnt').textContent+' workspaces · '+fmtDur(portStats.dur)+' agent time ('+fmtDur(portStats.wallDur)+' wall) · '+fmtUsd(portStats.cost)+' spend · '+fmtUsd(portStats.saved)+' saved by prompt caching');
     el('pane-economics').style.display=(activeView==='overview'||activeView==='economics')?'block':'none';
     el('pane-vibes').style.display=(activeView==='overview'||activeView==='vibes')?'block':'none';
     el('pane-overview').style.display=(activeView==='overview'||activeView==='topology')?'block':'none';
@@ -1000,10 +1000,12 @@ tr.brow{background:rgba(6,182,212,.09);font-weight:700}
     el('m-saved').textContent=fmtUsd(wsStats.saved)+' saved';
     el('m-cache').textContent=wsStats.cacheHitPct+'% cache hit · '+fmtTok(wsStats.tok)+' total tok';
     el('m-cache-comp').textContent=activeWorkspace?('All-Workspaces avg cache hit: '+portStats.cacheHitPct+'% ('+fmtUsd(portStats.saved)+' total saved)'):(fmtTok(portStats.cRead)+' cached read tokens across portfolio');
-    el('m-time').textContent=fmtDur(wsStats.dur)+' agent';
+    el('m-time').textContent=fmtDur(wsStats.dur)+' agent / '+fmtDur(wsStats.wallDur)+' wall';
     var shTime=portStats.dur>0?((wsStats.dur/portStats.dur)*100).toFixed(1):'100.0';
-    el('m-turns').textContent='vs. '+fmtDur(wsStats.wallDur)+' wall time ('+wsStats.parallelFactor+'x parallel · '+wsStats.activeDays+'d) · '+wsStats.sessions+' sess · '+wsStats.turns.toLocaleString()+' turns';
-    el('m-load').textContent=activeWorkspace?(shTime+'% of All-Workspaces agent time ('+fmtDur(portStats.dur)+') · Load: '+(wm.load||'unset (/neckbeard load <value>)')):('Target load: '+(wm.load||'per-workspace (.neckbeard.json)')+' · All-Workspaces 100%');
+    var avgSessMs=wsStats.sessions>0?Math.round(wsStats.dur/wsStats.sessions):0;
+    var portAvgSessMs=portStats.sessions>0?Math.round(portStats.dur/portStats.sessions):0;
+    el('m-turns').textContent=wsStats.sessions.toLocaleString()+' sessions · '+wsStats.turns.toLocaleString()+' turns across '+wsStats.activeDays+' active day(s)';
+    el('m-load').textContent=activeWorkspace?(shTime+'% of All-Workspaces agent time ('+fmtDur(portStats.dur)+') · '+wsStats.parallelFactor+'x concurrency · Avg '+fmtDur(avgSessMs)+'/sess'):(portStats.parallelFactor+'x parallel concurrency (+'+fmtDur(Math.max(0,portStats.dur-portStats.wallDur))+' compressed) · Avg '+fmtDur(portAvgSessMs)+'/sess');
     var vIns=(vData&&vData.linesAdded)||wsStats.ins,vDel=(vData&&vData.linesRemoved)||wsStats.del;
     el('m-sec').textContent=wsStats.blk+' guard blocks';
     el('m-loc').textContent='+'+vIns.toLocaleString()+' / -'+vDel.toLocaleString()+' LOC · '+wsStats.fixed+'/'+wsStats.found+' issues fixed';

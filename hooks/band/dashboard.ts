@@ -618,7 +618,7 @@ export function renderDashboardHtml(
         <div class="m-tag"><span>Agent Compute vs. Wall-Clock Time</span><span style="color:var(--nb-amber)">VELOCITY</span></div>
         <div class="m-val" id="m-time">0h 0m</div>
         <div class="m-sub" id="m-turns">0 sessions · 0 turns</div>
-        <div class="m-comp" id="m-load">Target load: unset</div>
+        <div class="m-comp" id="m-load">Agent vs. wall-clock work volume</div>
       </div>
       <div class="panel">
         <div class="m-tag"><span>Security Shield &amp; Code Delta</span><span style="color:var(--nb-emerald)">3 GATES</span></div>
@@ -1814,8 +1814,8 @@ export function renderDashboardHtml(
 
     var shareCostPct = portfolioStats.cost > 0 ? ((wsStats.cost / portfolioStats.cost) * 100).toFixed(1) : '100.0';
     el('st-subtitle').textContent = activeWorkspace
-      ? (wsStats.sessions + ' sessions · ' + wsStats.turns + ' turns · ' + fmtUsd(wsStats.cost) + ' (' + shareCostPct + '% of all workspaces) · Load target: ' + (wm.load || 'unset'))
-      : (portfolioStats.sessions + ' total sessions across ' + el('ws-total-cnt').textContent + ' workspaces · ' + fmtUsd(portfolioStats.cost) + ' total spend · ' + fmtUsd(portfolioStats.saved) + ' saved by prompt caching');
+      ? (wsStats.sessions + ' sessions · ' + wsStats.turns + ' turns · ' + fmtDur(wsStats.dur) + ' agent time (' + fmtDur(wsStats.wallDur) + ' wall) · ' + fmtUsd(wsStats.cost) + ' (' + shareCostPct + '% of all workspaces)')
+      : (portfolioStats.sessions + ' total sessions across ' + el('ws-total-cnt').textContent + ' workspaces · ' + fmtDur(portfolioStats.dur) + ' agent time (' + fmtDur(portfolioStats.wallDur) + ' wall) · ' + fmtUsd(portfolioStats.cost) + ' spend · ' + fmtUsd(portfolioStats.saved) + ' saved by prompt caching');
 
     el('pane-economics').style.display = (activeView === 'overview' || activeView === 'economics') ? 'block' : 'none';
     el('pane-vibes').style.display = (activeView === 'overview' || activeView === 'vibes') ? 'block' : 'none';
@@ -1835,12 +1835,14 @@ export function renderDashboardHtml(
       ? ('All-Workspaces avg cache hit: ' + portfolioStats.cacheHitPct + '% (' + fmtUsd(portfolioStats.saved) + ' total saved)')
       : (fmtTokens(portfolioStats.cRead) + ' cached read tokens across portfolio');
 
-    el('m-time').textContent = fmtDur(wsStats.dur) + ' agent';
+    el('m-time').textContent = fmtDur(wsStats.dur) + ' agent / ' + fmtDur(wsStats.wallDur) + ' wall';
     var shareTimePct = portfolioStats.dur > 0 ? ((wsStats.dur / portfolioStats.dur) * 100).toFixed(1) : '100.0';
-    el('m-turns').textContent = 'vs. ' + fmtDur(wsStats.wallDur) + ' wall time (' + wsStats.parallelFactor + 'x parallel · ' + wsStats.activeDays + 'd) · ' + wsStats.sessions + ' sess · ' + wsStats.turns.toLocaleString() + ' turns';
+    var avgSessMs = wsStats.sessions > 0 ? Math.round(wsStats.dur / wsStats.sessions) : 0;
+    var portAvgSessMs = portfolioStats.sessions > 0 ? Math.round(portfolioStats.dur / portfolioStats.sessions) : 0;
+    el('m-turns').textContent = wsStats.sessions.toLocaleString() + ' sessions · ' + wsStats.turns.toLocaleString() + ' turns across ' + wsStats.activeDays + ' active day(s)';
     el('m-load').textContent = activeWorkspace
-      ? (shareTimePct + '% of All-Workspaces agent time (' + fmtDur(portfolioStats.dur) + ') · Load: ' + (wm.load || 'unset (/neckbeard load <value>)'))
-      : ('Target load: ' + (wm.load || 'per-workspace (.neckbeard.json)') + ' · All-Workspaces 100%');
+      ? (shareTimePct + '% of All-Workspaces agent time (' + fmtDur(portfolioStats.dur) + ') · ' + wsStats.parallelFactor + 'x concurrency · Avg ' + fmtDur(avgSessMs) + '/sess')
+      : (portfolioStats.parallelFactor + 'x parallel concurrency (+' + fmtDur(Math.max(0, portfolioStats.dur - portfolioStats.wallDur)) + ' compressed) · Avg ' + fmtDur(portAvgSessMs) + '/sess');
 
     var vIns = (vData && vData.linesAdded) || wsStats.ins;
     var vDel = (vData && vData.linesRemoved) || wsStats.del;

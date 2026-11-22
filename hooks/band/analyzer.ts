@@ -50,39 +50,51 @@ const LANGUAGE_SYMBOL_PATTERNS: Array<{ matchExt: RegExp; extractors: RegExp[] }
 const TRUST_SINK_DETECTORS: Array<{ sinkTag: string; pattern: RegExp }> = [
   {
     sinkTag: 'http-in',
-    pattern: /\b(?:app|router|server|api|hono)\.(?:get|post|put|patch|delete|all|use|route)\s*\(|@(?:app|router|bp)\.(?:route|get|post|put|delete)\b|\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\b|\bhttp\.HandleFunc\b/,
+    pattern: /\b(?:app|router|server|api|hono|fastify)\.(?:get|post|put|patch|delete|all|use|route)\s*\(|@(?:app|router|bp)\.(?:route|get|post|put|delete|patch)\b|\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\b|\bhttp\.HandleFunc\b|\bipcMain\.(?:handle|on)\s*\(|#\[tauri::command\]|\b(?:axum::Router|actix_web|HttpServer::new|warp::Filter|tonic::transport::Server|FastAPI\s*\(|APIRouter\s*\(|gin\.(?:Default|New)|chi\.NewRouter|echo\.New|fiber\.New|WebSocketServer)\b/,
   },
   {
     sinkTag: 'cli-in',
-    pattern: /\bargparse\b|\bprocess\.argv\b|\breadInput\s*\(/,
+    pattern: /\b(?:process\.argv|process\.stdin|readInput\s*\(|parseArgs\s*\(|commander\b|yargs\b|argparse\b|sys\.argv\b|click\.(?:command|group)|typer\.Typer|clap::|#\[derive\([^)]*(?:Parser|Subcommand|Args)\b|#\[command\(|std::env::args|env::args(?:_os)?\s*\(|os\.Args\b|flag\.Parse|cobra\.Command)\b/,
   },
   {
     sinkTag: 'webhook-in',
-    pattern: /\b(?:webhook|consumer\.|on_message)\b/i,
+    pattern: /\b(?:webhook|stripe\.webhooks|verifyWebhook|svix|consumer\.(?:run|subscribe)|on_message\b|kafka|rdkafka|amqp|sqs|pubsub)\b/i,
   },
   {
     sinkTag: 'http-out',
-    pattern: /\bfetch\s*\(\s*(?!['"`]https?:)[^)]|\baxios\.(?:get|post|request)\s*\(|\brequests\.(?:get|post|request)\s*\(|\burllib\.request\.urlopen\b/,
+    pattern: /\b(?:fetch\s*\(|axios\.(?:get|post|put|delete|request)\s*\(|https?\.request\s*\(|reqwest::|ureq::|hyper::Client|requests\.(?:get|post|put|delete|request)\s*\(|httpx\.|aiohttp\.ClientSession|urllib\.request\.urlopen|http\.(?:Get|Post|NewRequest)\s*\(|URLSession\.shared)\b/,
   },
   {
     sinkTag: 'auth',
-    pattern: /\bjwt\b|\bjsonwebtoken\b|\bbcrypt\b|\bargon2\b|\bpassport\b|\bsession\b|\bverifyToken\b/i,
+    pattern: /\b(?:jwt|jsonwebtoken|jose|bcrypt|argon2|scrypt|pbkdf2|passport|set-cookie|setCookie|req\.headers\.authorization|Bearer\s+|oauth2?|oidc|saml|csrf|verifyToken|verify_token|authenticate|authorize|requireAuth|require_auth|checkPermission|hasPermission|api[_-]?key|ed25519_dalek|VerifyingKey|SigningKey|cosign|dsse|timingSafeEqual)\b/i,
   },
   {
     sinkTag: 'sql',
-    pattern: /\b(?:SELECT|INSERT|UPDATE|DELETE)\b[^;\n]{0,80}\b(?:FROM|INTO|SET|WHERE)\b|\.(?:raw|unsafe|exec)\s*\(/i,
+    pattern: /\b(?:SELECT\s+.+\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|CREATE\s+TABLE)\b|\b(?:rusqlite|sqlx::|diesel::|sea_orm|better-sqlite3|sqlite3|prisma\.|drizzle|knex|sequelize|sqlalchemy|cursor\.execute|Connection::open)\b/i,
   },
   {
     sinkTag: 'fs',
-    pattern: /\b(?:readFile|writeFile|createReadStream|createWriteStream|unlink|rm)(?:Sync)?\s*\(/,
+    pattern: /\b(?:(?:readFile|writeFile|appendFile|createReadStream|createWriteStream|unlink|rm|cp|mkdir|readdir|realpath)(?:Sync)?\s*\(|std::fs::|tokio::fs::|fs::(?:read_to_string|read|write|OpenOptions|create_dir|remove_file|remove_dir|copy|rename)|File::(?:open|create)|NamedTempFile|shutil\.(?:copy|rmtree|move)|os\.(?:ReadFile|WriteFile|OpenFile|Create|RemoveAll))\b/,
+  },
+  {
+    sinkTag: 'serde',
+    pattern: /\b(?:JSON\.parse\s*\(|serde_json::(?:from_str|from_slice|from_reader|from_value)|toml::from_str|serde_yaml::from_|bincode::deserialize|yaml\.(?:load|safe_load)|pickle\.loads?|marshal\.loads|ObjectInputStream|unserialize\s*\(|XMLParser|DOMParser|xml2js|prost::Message)\b/,
   },
   {
     sinkTag: 'proc',
-    pattern: /\bchild_process\b|\bexec(?:File)?Sync\s*\(|\bspawn(?:Sync)?\s*\(|\bsubprocess\.|\bos\.system\s*\(|\beval\s*\(/,
+    pattern: /\b(?:child_process|exec(?:File)?Sync\s*\(|spawn(?:Sync)?\s*\(|execFile\s*\(|std::process::Command|tokio::process::Command|Command::new\s*\(|subprocess\.(?:run|Popen|call|check_output)|os\.system\s*\(|os\.popen\s*\(|exec\.Command\s*\(|\beval\s*\(|new Function\s*\()\b/,
+  },
+  {
+    sinkTag: 'crypto',
+    pattern: /\b(?:createHash|createHmac|createCipher(?:iv)?|createDecipher(?:iv)?|crypto\.subtle|crypto\.(?:sign|verify|randomBytes)|sha2::|Sha256|Sha512|ed25519_dalek|hmac::|ring::|aes_gcm|chacha20poly1305|rustls|hashlib\.|hmac\.new|crypto\/(?:sha256|ed25519|hmac|tls|aes))\b/,
+  },
+  {
+    sinkTag: 'env',
+    pattern: /\b(?:process\.env(?:\.[A-Za-z0-9_]+|\[)|os\.environ\b|os\.getenv\s*\(|std::env::(?:var|var_os|vars)|env::(?:var|var_os)\s*\(|os\.Getenv\s*\(|dotenv)\b/,
   },
   {
     sinkTag: 'ai',
-    pattern: /\banthropic\b|\bopenai\b|\bmessages\.create\s*\(|\bchat\.completions\b|\badditionalContext\b/i,
+    pattern: /\b(?:anthropic|openai|gemini|messages\.create\s*\(|chat\.completions|tool_use|function_call|McpServer|mcp_schemas|langchain|additionalContext|hookSpecificOutput|embedder|candle_)\b/i,
   },
 ]
 

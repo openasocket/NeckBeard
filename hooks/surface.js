@@ -15,7 +15,7 @@ const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 680);
 const MAX_FILES = 3000;
 const MAX_BYTES = 200 * 1024;
 const SRC = /\.(py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|java|kt|php|cs|swift|sh|yml|yaml)$/;
-const SKIP = /(^|\/)(node_modules|vendor|dist|build|out|target|coverage|\.next|\.venv|venv|__pycache__|\.claude|\.worktrees|tests?|__tests__|spec|fixtures|migrations)(\/|$)|\.(test|spec|min|d)\.[a-z]+$/;
+const SKIP = /(^|\/)(node_modules|vendor|dist|build|out|target|coverage|\.next|\.venv|venv|__pycache__|\.claude|\.worktrees|\.maestro|Auto Run Docs|Plans|docs|benches|fuzz|tests?|__tests__|spec|fixtures|migrations)(\/|$)|\.(test|spec|min|d)\.[a-z]+$|_(test|spec)\.(rs|go|py|ts|js)$/;
 const SAFE_PATH = /^[\w.@+\/-]+$/; // a path with odd characters is skipped, never echoed
 
 const CATEGORIES = [
@@ -25,7 +25,7 @@ const CATEGORIES = [
   ['deserialization and parsers', /\bpickle\.loads?\b|\byaml\.load\s*\((?![^)]*SafeLoader)|\bmarshal\.loads\b|\bObjectInputStream\b|\bunserialize\s*\(|\bXMLParser\b|\bDOMParser\b|\bxml2js\b|\blibxml\b/],
   ['outbound requests (SSRF)', /\bfetch\s*\(\s*(?!['"`]https?:)[^)]|\baxios\.(?:get|post|request)\s*\(\s*(?!['"`])|\brequests\.(?:get|post|request)\s*\(\s*(?!['"])|\burllib\.request\.urlopen\b|\bhttp\.Get\s*\(\s*[a-z]/],
   ['file paths built at runtime', /\b(?:readFile|writeFile|createReadStream|createWriteStream|unlink|rm)(?:Sync)?\s*\(\s*(?:path\.join\s*\()?[^'"`)\s]|\bopen\s*\(\s*(?:os\.path\.join|f["'])|\bsend_file\s*\(|\bsendFile\s*\(/],
-  ['auth, sessions and tokens', /\bjwt\b|\bjsonwebtoken\b|\bbcrypt\b|\bargon2\b|\bpassport\b|\bsession\b|\bset-cookie\b|\bsetCookie\b|\bauthorization\b|\boauth\b|\bcsrf\b|\bverifyToken\b|\bapi[_-]?key\b/i],
+  ['auth, sessions and tokens', /\b(?:jwt|jsonwebtoken|jose|bcrypt|argon2|scrypt|passport|set-cookie|setCookie|authorization|oauth2?|oidc|csrf|verifyToken|verify_token|authenticate|authorize|requireAuth|checkPermission|ed25519_dalek|VerifyingKey|SigningKey|api[_-]?key)\b/i],
   ['crypto and randomness', /\bcreateCipher(?:iv)?\b|\bcreateHash\s*\(\s*['"](?:md5|sha1)['"]|\bhashlib\.(?:md5|sha1)\b|\bMath\.random\s*\(|\brandom\.(?:random|randint|choice)\s*\(|\bDES\b|\bECB\b/],
   ['secrets and config from the environment', /\bprocess\.env\.[A-Z_]*(?:KEY|SECRET|TOKEN|PASS|PRIVATE)[A-Z_]*|\bos\.environ\b[^\n]*(?:KEY|SECRET|TOKEN|PASS)|\benv\.[A-Z_]*(?:KEY|SECRET|TOKEN)[A-Z_]*/],
   ['LLM and agent calls (prompt injection)', /\banthropic\b|\bopenai\b|\bmessages\.create\s*\(|\bchat\.completions\b|\btool_use\b|\bfunction_call\b|\bmcp\b|\bMcpServer\b|\blangchain\b|\badditionalContext\b/i],
@@ -96,12 +96,35 @@ function buildSurface(root) {
   return 'Attack-surface map (files matched by pattern; read them before changing code that crosses these boundaries):\n' + lines.join('\n');
 }
 
+// High-precision multi-language boundary sink detectors (JS/TS, Rust, Python, Go, Swift, Java, Ruby)
+// used by buildBoundaryMap() to map a project's real external [ext] and internal [int] architecture.
+const BOUNDARY_DETECTORS = {
+  cliIn: /\b(?:process\.argv|process\.stdin|readInput\s*\(|parseArgs\s*\(|commander\b|yargs\b|argparse\b|sys\.argv\b|click\.(?:command|group)|typer\.Typer|clap::|#\[derive\([^)]*(?:Parser|Subcommand|Args)\b|#\[command\(|std::env::args|env::args(?:_os)?\s*\(|os\.Args\b|flag\.(?:Parse|String|Int|Bool)|cobra\.Command|ParsableCommand)\b/,
+  webhookIn: /\b(?:webhook|stripe\.webhooks|verifyWebhook|svix|consumer\.(?:run|subscribe)|on_message\b|kafka|rdkafka|amqp|sqs|pubsub)\b/i,
+  httpIn: /\b(?:app|router|server|api|hono|fastify)\.(?:get|post|put|patch|delete|all|use|route)\s*\(|@(?:app|router|bp)\.(?:route|get|post|put|delete|patch)\b|@(?:Get|Post|Put|Delete|Patch|RequestMapping|Controller)\b|\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\b|\bhttp\.(?:HandleFunc|ListenAndServe)\b|\baddEventListener\(\s*['"]fetch['"]|\bipcMain\.(?:handle|on)\s*\(|#\[tauri::command\]|\b(?:axum::Router|actix_web|HttpServer::new|warp::Filter|tonic::transport::Server|rocket::build|FastAPI\s*\(|APIRouter\s*\(|gin\.(?:Default|New)|chi\.NewRouter|echo\.New|fiber\.New|WebSocketServer)\b/,
+  httpOut: /\b(?:fetch\s*\(|axios\.(?:get|post|put|delete|request)\s*\(|https?\.request\s*\(|got\s*\(|reqwest::|ureq::|hyper::Client|requests\.(?:get|post|put|delete|request)\s*\(|httpx\.(?:AsyncClient|Client|get|post)|aiohttp\.ClientSession|urllib\.request\.urlopen|http\.(?:Get|Post|NewRequest)\s*\(|URLSession\.shared)\b/,
+  auth: /\b(?:jwt|jsonwebtoken|jose|bcrypt|argon2|scrypt|pbkdf2|passport|set-cookie|setCookie|req\.headers\.authorization|Bearer\s+|oauth2?|oidc|saml|csrf|verifyToken|verify_token|authenticate|authorize|requireAuth|require_auth|checkPermission|hasPermission|api[_-]?key|ed25519_dalek|VerifyingKey|SigningKey|cosign|dsse|timingSafeEqual)\b/i,
+  sql: /\b(?:SELECT\s+.+\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|DELETE\s+FROM|CREATE\s+TABLE)\b|\b(?:rusqlite|sqlx::|diesel::|sea_orm|better-sqlite3|sqlite3|prisma\.|drizzle|knex|sequelize|sqlalchemy|cursor\.execute|Connection::open)\b/i,
+  fs: /\b(?:fs\.(?:readFile|writeFile|appendFile|open|unlink|rm|cp|mkdir|readdir|stat|lstat|realpath|exists)(?:Sync)?|readFileSync|writeFileSync|appendFileSync|existsSync|mkdirSync|readdirSync|unlinkSync|rmSync|cpSync|realpathSync|createReadStream|createWriteStream|std::fs::|tokio::fs::|fs::(?:read_to_string|read|write|OpenOptions|create_dir|remove_file|remove_dir|copy|rename)|File::(?:open|create)|NamedTempFile|Path\([^)]+\)\.(?:read_text|write_text|read_bytes|write_bytes|open)|shutil\.(?:copy|rmtree|move)|os\.(?:ReadFile|WriteFile|OpenFile|Create|RemoveAll)|ioutil\.(?:ReadFile|WriteFile))\b/,
+  serde: /\b(?:JSON\.parse\s*\(|serde_json::(?:from_str|from_slice|from_reader|from_value)|toml::from_str|serde_yaml::from_|bincode::deserialize|yaml\.(?:load|safe_load)|pickle\.loads?|marshal\.loads|ObjectInputStream|unserialize\s*\(|XMLParser|DOMParser|xml2js|prost::Message)\b/,
+  proc: /\b(?:child_process|exec(?:File)?Sync\s*\(|spawn(?:Sync)?\s*\(|execFile\s*\(|std::process::Command|tokio::process::Command|Command::new\s*\(|subprocess\.(?:run|Popen|call|check_output)|os\.system\s*\(|os\.popen\s*\(|exec\.Command\s*\(|Runtime\.getRuntime\(\)\.exec|\beval\s*\(|new Function\s*\()\b/,
+  crypto: /\b(?:createHash|createHmac|createCipher(?:iv)?|createDecipher(?:iv)?|crypto\.subtle|crypto\.(?:sign|verify|randomBytes)|sha2::|Sha256|Sha512|ed25519_dalek|hmac::|ring::|aes_gcm|chacha20poly1305|rustls|hashlib\.(?:sha256|sha512|blake2b|md5|sha1)|hmac\.new|crypto\/(?:sha256|ed25519|hmac|tls|aes))\b/,
+  env: /\b(?:process\.env(?:\.[A-Za-z0-9_]+|\[)|os\.environ\b|os\.getenv\s*\(|std::env::(?:var|var_os|vars)|env::(?:var|var_os)\s*\(|os\.Getenv\s*\(|dotenv)\b/,
+  ai: /\b(?:anthropic|openai|gemini|messages\.create\s*\(|chat\.completions|tool_use|function_call|McpServer|mcp_schemas|langchain|additionalContext|hookSpecificOutput|embedder|candle_)\b/i,
+};
+
 // Builds the concise two-tier (external & internal) trust-boundary map for a project.
-function buildBoundaryMap(root = process.cwd(), maxPerCategory = 6) {
-  const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
+function buildBoundaryMap(root = process.cwd(), maxPerCategory = 16) {
+  let files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
+  // Prioritise core production directories (src/, crates/, apps/, packages/, hooks/, lib/, functions/, scripts/) before examples/
+  files.sort((a, b) => {
+    const aEx = /(^|\/)(examples?|demo|samples?|benchmarks?)\//i.test(a) ? 1 : 0;
+    const bEx = /(^|\/)(examples?|demo|samples?|benchmarks?)\//i.test(b) ? 1 : 0;
+    return aEx - bEx || a.localeCompare(b);
+  });
   const ext = { ingress: [], egress: [], supply: [] };
   const int = { auth: [], data: [], exec: [], ai: [] };
-  const limit = Math.max(1, Number(maxPerCategory) || 6);
+  const limit = Math.max(1, Number(maxPerCategory) || 16);
   const add = (arr, item) => { if (arr.length < limit && !arr.includes(item)) arr.push(item); };
 
   for (const f of files) {
@@ -118,28 +141,30 @@ function buildBoundaryMap(root = process.cwd(), maxPerCategory = 6) {
       text = fs.readFileSync(full, 'utf8');
     } catch { continue; }
 
-    // External ingress, egress
-    if (CATEGORIES[0][1].test(text)) {
-      const tag = /\b(?:process\.argv|argparse|readInput)\b/.test(text) ? 'cli-in' : /\b(?:webhook|consumer\.|on_message)\b/i.test(text) ? 'webhook-in' : 'http-in';
-      add(ext.ingress, `${f}->${tag}`);
-    }
-    if (CATEGORIES[4][1].test(text)) add(ext.egress, `${f}->http-out`);
+    // External ingress (http-in, cli-in, webhook-in) & egress (http-out)
+    const inTags = [];
+    if (BOUNDARY_DETECTORS.httpIn.test(text)) inTags.push('http-in');
+    if (BOUNDARY_DETECTORS.cliIn.test(text)) inTags.push('cli-in');
+    if (BOUNDARY_DETECTORS.webhookIn.test(text)) inTags.push('webhook-in');
+    if (inTags.length) add(ext.ingress, `${f}->${inTags[0]}`);
+    if (BOUNDARY_DETECTORS.httpOut.test(text)) add(ext.egress, `${f}->http-out`);
 
-    // Internal auth, data, exec, ai
-    if (CATEGORIES[6][1].test(text)) add(int.auth, `${f}->auth`);
+    // Internal auth, data (sql, fs, serde), exec (proc, crypto, env), ai
+    if (BOUNDARY_DETECTORS.auth.test(text)) add(int.auth, `${f}->auth`);
+
     const dataTags = [];
-    if (CATEGORIES[2][1].test(text)) dataTags.push('sql');
-    if (CATEGORIES[5][1].test(text)) dataTags.push('fs');
-    if (CATEGORIES[3][1].test(text)) dataTags.push('serde');
+    if (BOUNDARY_DETECTORS.sql.test(text)) dataTags.push('sql');
+    if (BOUNDARY_DETECTORS.fs.test(text)) dataTags.push('fs');
+    if (BOUNDARY_DETECTORS.serde.test(text)) dataTags.push('serde');
     if (dataTags.length) add(int.data, `${f}->${dataTags.join(',')}`);
 
     const execTags = [];
-    if (CATEGORIES[1][1].test(text)) execTags.push('proc');
-    if (CATEGORIES[7][1].test(text)) execTags.push('crypto');
-    if (CATEGORIES[8][1].test(text)) execTags.push('env');
+    if (BOUNDARY_DETECTORS.proc.test(text)) execTags.push('proc');
+    if (BOUNDARY_DETECTORS.crypto.test(text)) execTags.push('crypto');
+    if (BOUNDARY_DETECTORS.env.test(text)) execTags.push('env');
     if (execTags.length) add(int.exec, `${f}->${execTags.join(',')}`);
 
-    if (CATEGORIES[9][1].test(text)) add(int.ai, `${f}->ai`);
+    if (BOUNDARY_DETECTORS.ai.test(text)) add(int.ai, `${f}->ai`);
   }
 
   return { external: ext, internal: int };
@@ -215,12 +240,12 @@ function sanitizeEntry(entry) {
   return sinks.length ? `${norm}->${sinks.join(',')}` : norm;
 }
 
-function sanitizeList(list) {
+function sanitizeList(list, maxItems = 24) {
   if (!Array.isArray(list)) return [];
   const out = [];
   for (const item of list) {
     const clean = sanitizeEntry(item);
-    if (clean && !out.includes(clean) && out.length < 6) out.push(clean);
+    if (clean && !out.includes(clean) && out.length < maxItems) out.push(clean);
   }
   return out;
 }
@@ -382,11 +407,13 @@ function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env)
   for (const [k, v] of Object.entries(nextBoundaryLoad)) {
     if (v === null || v === '') delete nextBoundaryLoad[k];
   }
+  const candidateBounds = patch.boundaries || existing.boundaries;
+  const resolvedBounds = flattenBoundaries(candidateBounds).length > 0 ? candidateBounds : buildBoundaryMap(root);
   const merged = sanitizeProjectConfig({
     shared: patch.shared !== undefined ? patch.shared : existing.shared,
     load: patch.load !== undefined ? patch.load : existing.load,
     boundaryLoad: nextBoundaryLoad,
-    boundaries: patch.boundaries || existing.boundaries,
+    boundaries: resolvedBounds,
   });
 
   const localFile = localProjectFile(root, env);
@@ -412,7 +439,8 @@ function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env)
 function formatProjectContext(root = process.cwd(), env = process.env) {
   const cfg = readProjectConfig(root, env);
   const liveMap = buildBoundaryMap(root);
-  const map = cfg && cfg.boundaries ? cfg.boundaries : liveMap;
+  const hasSavedBounds = Boolean(cfg && cfg.boundaries && flattenBoundaries(cfg.boundaries).length > 0);
+  const map = hasSavedBounds ? cfg.boundaries : liveMap;
   const ext = (map && map.external) || {};
   const int = (map && map.internal) || {};
 

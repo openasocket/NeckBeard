@@ -5,42 +5,59 @@
     "external": {
       "ingress": [
         "hooks/band-import.js->cli-in",
-        "hooks/band/analyzer.ts->webhook-in",
-        "hooks/surface.js->cli-in",
+        "hooks/band/analyzer.ts->http-in",
+        "hooks/band/dashboard.ts->webhook-in",
+        "hooks/lib.js->cli-in",
+        "hooks/surface.js->http-in",
         "scripts/install-all.js->cli-in"
       ],
-      "egress": [],
+      "egress": [
+        "hooks/band/analyzer.ts->http-out",
+        "hooks/surface.js->http-out"
+      ],
       "supply": [
         ".github/workflows/test.yml->ci"
       ]
     },
     "internal": {
       "auth": [
-        ".opencode/plugins/neckbeard.mjs->auth",
         "hooks/band-import.js->auth",
         "hooks/band/analyzer.ts->auth",
         "hooks/band/dashboard.ts->auth",
-        "hooks/band/register.tsx->auth",
-        "hooks/lib.js->auth"
+        "hooks/guard.js->auth",
+        "hooks/surface.js->auth",
+        "hooks/vibes.js->auth"
       ],
       "data": [
         ".opencode/plugins/neckbeard.mjs->fs",
-        "hooks/band-import.js->fs",
-        "hooks/lib.js->fs",
+        "hooks/band-import.js->fs,serde",
+        "hooks/band/analyzer.ts->sql,fs,serde",
+        "hooks/band/dashboard.ts->fs,serde",
+        "hooks/band/register.tsx->fs,serde",
+        "hooks/lib.js->fs,serde",
         "hooks/prompt.js->fs",
-        "hooks/surface.js->fs",
-        "hooks/vibes.js->fs"
+        "hooks/surface.js->sql,fs,serde",
+        "hooks/vibes.js->fs,serde",
+        "scripts/install-all.js->fs,serde"
       ],
       "exec": [
+        ".opencode/plugins/neckbeard.mjs->env",
         "hooks/band-import.js->proc",
+        "hooks/band/analyzer.ts->proc,crypto,env",
+        "hooks/guard.js->env",
+        "hooks/lib.js->crypto",
         "hooks/prompt.js->proc",
-        "hooks/session-start.js->proc",
-        "hooks/surface.js->proc",
+        "hooks/session-start.js->proc,env",
+        "hooks/subagent-start.js->env",
+        "hooks/surface.js->proc,crypto,env",
+        "pi-extension/index.js->env",
         "scripts/install-all.js->proc"
       ],
       "ai": [
+        "hooks/band/analyzer.ts->ai",
         "hooks/guard.js->ai",
         "hooks/lib.js->ai",
+        "hooks/surface.js->ai",
         "scripts/install-all.js->ai"
       ]
     }

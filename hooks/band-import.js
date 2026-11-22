@@ -13,7 +13,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { claudeDir, bandDir, configBase, readGuardStats } = require('./lib');
 const { hasVibes, readVibesTelemetry, extractCleanTextSummary } = require('./vibes');
-const { buildBoundaryMap, detectBoundaryDrift, readProjectConfig } = require('./surface');
+const { buildBoundaryMap, detectBoundaryDrift, flattenBoundaries, readProjectConfig } = require('./surface');
 
 const STALE_TITLE_RE = /^(?:#\s*(?:Context|Instructions|Overview|Task|Tasks|Prior Conversation)|Interactive coding session$)/i;
 
@@ -1256,9 +1256,29 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
     const canScanBounds = isCurrent || isProjectDirectory(wsPath);
     if (!isCurrent && !wsHasVibes && !wsCfg && !canScanBounds) continue;
 
-    let bounds = (wsCfg && wsCfg.boundaries) || null;
-    if (!bounds && canScanBounds) {
-      bounds = buildBoundaryMap(wsPath, 16);
+    const savedBounds = (wsCfg && wsCfg.boundaries && flattenBoundaries(wsCfg.boundaries).length > 0) ? wsCfg.boundaries : null;
+    let bounds = savedBounds;
+    if (canScanBounds) {
+      const scanned = buildBoundaryMap(wsPath, 24);
+      if (!bounds) {
+        bounds = scanned;
+      } else {
+        // Merge saved baseline boundaries with live-discovered boundaries so every project's custom topology graph is complete
+        const mergeArr = (a = [], b = []) => [...new Set([...a, ...b])].slice(0, 24);
+        bounds = {
+          external: {
+            ingress: mergeArr(bounds.external && bounds.external.ingress, scanned.external.ingress),
+            egress: mergeArr(bounds.external && bounds.external.egress, scanned.external.egress),
+            supply: mergeArr(bounds.external && bounds.external.supply, scanned.external.supply),
+          },
+          internal: {
+            auth: mergeArr(bounds.internal && bounds.internal.auth, scanned.internal.auth),
+            data: mergeArr(bounds.internal && bounds.internal.data, scanned.internal.data),
+            exec: mergeArr(bounds.internal && bounds.internal.exec, scanned.internal.exec),
+            ai: mergeArr(bounds.internal && bounds.internal.ai, scanned.internal.ai),
+          },
+        };
+      }
     }
     const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };
     const rawVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;

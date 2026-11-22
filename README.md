@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.1.0">
+  <img src="https://img.shields.io/badge/version-0.2.0-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="v0.2.0">
   <img src="https://img.shields.io/badge/dependencies-0-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="0 dependencies">
   <img src="https://img.shields.io/badge/gates-Safe%20%C2%B7%20Fast%20%C2%B7%20Done-111714?style=flat-square&labelColor=0b0e0c&color=f59e0b" alt="Three gates: Safe, Fast, Done">
   <a href="https://www.itsavibe.ai"><img src="https://img.shields.io/badge/VIBES-v1.1%20%C2%B7%20VERIFY%20%C2%B7%20PRISM%20%C2%B7%20TRACE-111714?style=flat-square&labelColor=0b0e0c&color=22c55e" alt="VIBES Protocol Compatible"></a>
@@ -73,8 +73,47 @@ Then it enforces the three gates from line one:
 |---|---|
 | `neckbeard` | Applies the question ladder and the three gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md) on coding tasks across `lite`, `full`, `paranoid`, and `off` levels. |
 | `neckbeard-review` | Reviews a change against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md) with concrete failure cases, variant search, and `--ci` gate mode. |
-| `neckbeard-audit` | Audits a repo or folder against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md), starting at entry points and covering doc promises, permissions, supply chain, and remediation plans. |
+| `neckbeard-audit` | Audits a repo or folder (`lite` default: targeted execution flows and major internal/external data & trust boundaries; `complete`: every single code, config, and doc file in the repo, with an upfront time/token/tool-call warning) against the gates in [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). |
 | `neckbeard-debt` | Scans tracked and untracked files for `risk:`, `shortcut:`, and `ponytail:` markers and enforces the accepted-risk boundary from [`skills/neckbeard/SKILL.md`](skills/neckbeard/SKILL.md). |
+| `neckbeard-gain` | Local telemetry report and HTML dashboard (`~/.config/neckbeard/band/board.html`): tokens, cost, turn time, definition reuse %, refactor line delta, `PreToolUse` guard blocks, and security issues identified/resolved (defaulting to `.ai-audit/` VIBES data when present). |
+
+---
+
+## Project Load Default, Trust-Boundary Map & Sharing (`.neckbeard.json`)
+
+When you don't specify load parameters in a prompt, NeckBeard checks `.neckbeard.json` (and repo docs). If no load target exists and the **Fast** gate applies, NeckBeard asks one concise question to ascertain load, saves it as the project default, and reuses it automatically moving forward.
+
+For **trust boundaries**, NeckBeard never asks you to do its threat modeling: it derives the boundary itself from the ask, the code, and a **concise internal & external trust-boundary map** (`<= 600` chars / `~150` tokens) injected at `SessionStart` and `SubagentStart`:
+- **External boundaries (`[ext]`):** `ingress` (`http-in`, `cli-in`, `webhook-in`), `egress` (`http-out`), and `supply` (`ci`).
+- **Internal boundaries (`[int]`):** `auth` (`auth`), `data` (`sql`, `fs`, `serde`), `exec` (`proc`, `crypto`, `env`), and `ai` (`ai`).
+- When an architectural detail is ambiguous, NeckBeard defaults to **siding toward a fail-closed conclusion** rather than pausing to ask.
+
+### What Sharing Means (Enabled by Default) & How to Toggle It
+
+- **Shared by default (`/neckbeard share on`):** NeckBeard writes `.neckbeard.json` at the repository root with `"shared": true`. **Sharing means committing `.neckbeard.json` to Git** so teammates, subagents, git worktrees, and CI review runs (`/neckbeard-review --ci`) immediately use the exact same load target and trust-boundary map without cold-start discovery tokens.
+- **Strict automatic censorship:** Both [`hooks/surface.js`](hooks/surface.js) and [`hooks/guard.js`](hooks/guard.js) strictly censor `.neckbeard.json`. Boundary entries are restricted to `<repo-relative-posix-path>-><closed-sink-enum>`; any URLs, internal hostnames, IP addresses, emails, absolute local paths, or secrets are stripped on save and blocked by the `PreToolUse` guard.
+- **Disable sharing (`/neckbeard share off`):** Moves the project's load target and boundary map out of the repository into `~/.config/neckbeard/projects/<repo>.json`, removes `.neckbeard.json` from the working tree (and untracks it via `git rm --cached`), and adds `.neckbeard.json` to `.git/info/exclude` so it is never committed.
+- **Re-enable sharing (`/neckbeard share on`):** Writes the sanitized `.neckbeard.json` back to the repository root and removes it from `.git/info/exclude` so it can be committed to Git.
+- **Commands:**
+  - `/neckbeard load 200 rps, 50k rows, p95 < 100ms` — Set or update the project's default load target.
+  - `/neckbeard load webhook-in=2000 rps burst` — Set a per-boundary load envelope (`boundaryLoad`) for a specific sink or boundary group (`http-in`, `cli-in`, `webhook-in`, `http-out`, `ci`, `auth`, `sql`, `fs`, `proc`, `serde`, `crypto`, `env`, `ai`, `ingress`, `egress`, `supply`, `data`, `exec`).
+  - `/neckbeard map` — Scan or refresh the concise internal and external trust-boundary map.
+  - `/neckbeard share on` / `/neckbeard share off` — Enable or disable Git sharing of `.neckbeard.json`.
+- **Automatic Boundary-Expansion Drift Alerts & Debt Expiry Triggers:**
+  - When a code change adds a new external or internal boundary sink not present in `.neckbeard.json`, NeckBeard flags the unreviewed boundary expansion (`⚠ +N boundary`) in prompt context, in the Claude Code and Pi status bars, and in [`/neckbeard-review`](skills/neckbeard-review/SKILL.md).
+  - [`/neckbeard-debt`](skills/neckbeard-debt/SKILL.md) compares `risk:` comment revisit thresholds against the load in `.neckbeard.json` and flags any deferral whose trigger has already been crossed as `expired-load-trigger` under **Must fix now**.
+
+---
+
+## Claude Code Banner (`AbovePrompt` Band) & Local Telemetry Board
+
+In Claude Code (CLI and Desktop), NeckBeard loads [`hooks/claude-band.json`](hooks/claude-band.json) ([`hooks/band/register.tsx`](hooks/band/register.tsx)) to render an interactive banner above the prompt input box and maintain a **100% local** telemetry ledger and self-contained HTML dashboard (`~/.config/neckbeard/band/board.html`):
+
+- **Tokens, Cost & Turn Performance:** Session and per-turn API cost (`$`), input/output/cache tokens, and active agent work time.
+- **Refactor & Code Reuse Optimizations:** Definition reuse percentage (`reused` vs. `new` functions/classes), net refactor line delta (`+added / -removed` LOC), open callers warning (`⚠ N callers open`), and live test status (`✓ N tests`, `✗ N failed`, `stale`).
+- **Security Issues Identified & Resolved:** Live count of `PreToolUse` guard blocks (`🛡️ N blocked`), security/TRACE issues identified vs. resolved (`🔒 fixed/found`), active project load target, and live **VIBES PRISM** risk score.
+- **VIBES-First Instrumentation:** When `.ai-audit/` ([VIBES Protocol](https://www.itsavibe.ai)) is present, the band, importer ([`hooks/band-import.js`](hooks/band-import.js)), and `/neckbeard-gain` default to reading `.ai-audit/manifest.json` and `.ai-audit/annotations.jsonl` for line-range deltas, PRISM `risk_score`, EVOLVE `decision` counts, and TRACE incident resolution.
+- **Band commands:** `/neckbeard band [on|off|import|board]` or `/neckbeard-gain`.
 
 ---
 
@@ -82,11 +121,13 @@ Then it enforces the three gates from line one:
 
 | Host | What it loads |
 |---|---|
-| **Claude Code** | Full plugin: loads the four skills and [`hooks/claude-hooks.json`](hooks/claude-hooks.json) (session & subagent rule injection, `/neckbeard` level switching, and the `PreToolUse` secret and unsafe-command guard). |
-| **Codex** | Full plugin: loads [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json), the four skills (`$neckbeard`, `$neckbeard-review`, `$neckbeard-audit`, `$neckbeard-debt`), and [`hooks/claude-hooks.json`](hooks/claude-hooks.json) for session activation and `$neckbeard` level switching. |
-| **GitHub Copilot CLI** | Loads [`.github/plugin/plugin.json`](.github/plugin/plugin.json) (the four skills) and [`AGENTS.md`](AGENTS.md) / [`.github/copilot-instructions.md`](.github/copilot-instructions.md). |
+| **Claude Code** | Full plugin: loads the five skills, [`hooks/claude-hooks.json`](hooks/claude-hooks.json) (session & subagent rule/map injection, `/neckbeard` level/load/map/share/band commands, and the `PreToolUse` secret, VIBES, and config-censor guard), and [`hooks/claude-band.json`](hooks/claude-band.json) (`AbovePrompt` telemetry banner & local HTML board). |
+| **Codex** | Full plugin: loads [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json), the five skills (`$neckbeard`, `$neckbeard-review`, `$neckbeard-audit`, `$neckbeard-debt`, `$neckbeard-gain`), and [`hooks/claude-hooks.json`](hooks/claude-hooks.json) for session activation and `$neckbeard` commands. |
+| **GitHub Copilot CLI** | Loads [`.github/plugin/plugin.json`](.github/plugin/plugin.json) (the five skills) and [`AGENTS.md`](AGENTS.md) / [`.github/copilot-instructions.md`](.github/copilot-instructions.md). |
 | **Copilot Editor & Antigravity IDE** | Read [`AGENTS.md`](AGENTS.md) from the open repository root as always-on workspace instructions. |
-| **Antigravity CLI & Grok Build** | Load the four skills via [`plugin.json`](plugin.json) and [`.grok-plugin/marketplace.json`](.grok-plugin/marketplace.json) without lifecycle hooks. |
+| **Antigravity CLI & Grok Build** | Load the five skills via [`plugin.json`](plugin.json) and [`.grok-plugin/marketplace.json`](.grok-plugin/marketplace.json) without lifecycle hooks. |
+| **Pi (`pi`) & Oh My Pi (`omp`)** | Load [`pi-extension/index.js`](pi-extension/index.js) via `"pi"` in [`package.json`](package.json) for a live TUI status bar (`● 🧔 neckbeard: 🛡️ FULL`), turn-by-turn rule/map injection, and `/neckbeard*` commands. |
+| **OpenCode & Kilo Code** | Load [`.opencode/plugins/neckbeard.mjs`](.opencode/plugins/neckbeard.mjs) to inject the ruleset, load target, and trust-boundary map every turn and register the five skills. |
 | **Gemini CLI** | Loads [`gemini-extension.json`](gemini-extension.json), setting `contextFileName` to [`AGENTS.md`](AGENTS.md) and discovering `skills/`. |
 | **Cursor, Windsurf, and Kiro** | Do not read `AGENTS.md` unless their own rules file (`.cursor/rules/`, `.windsurf/rules/`, `.kiro/steering/`) includes it. |
 
@@ -197,7 +238,7 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 | **Speed & scale** | Checked during review/audit | Baked into the writing rules (`Fast and scalable at the named number`: input limits, idempotent retries, no N+1, no races, no quadratic or blocking work) |
 | **End-user experience** | Minimal implementation of core job | Deep modules: absorb security, retry, and validation complexity inside; safe defaults and actionable failure outcomes outside |
 | **Debt ledger** | `shortcut:` comments via `/ponytail-debt` | `risk:` (and `shortcut:`) comments via `/neckbeard-debt`, flagging any `illegal-deferral` of a trust check or data-loss write |
-| **Telemetry** | Local CSV ledger & optional webhook | None: zero network calls, zero telemetry, zero dependencies |
+| **Telemetry & Band** | Local CSV ledger, Claude Code band & optional webhook | 100% local Claude Code band & HTML board (`~/.config/neckbeard/band/board.html`) with reuse %, refactor LOC delta, guard blocks, security issues resolved, and automatic `.ai-audit/` VIBES ingestion (zero network calls) |
 
 ---
 

@@ -16,7 +16,7 @@ Review a change against the gates in `skills/neckbeard/SKILL.md` without restati
 ## Steps
 
 1. **Scope.** Review what the user names, or the uncommitted changes, or the last commit.
-2. **Context.** Read the diff and the callers, callees, and tests it connects to. If `.ai-audit/` (VIBES protocol) exists, check high-risk PRISM annotations (`risk_score >= 0.60` in `.ai-audit/annotations.jsonl`) on changed files, and flag any direct edit or deletion of immutable `.ai-audit/` provenance artifacts (`manifest.json`, `annotations.jsonl`, `blobs/`, `attestations/`, `incidents/`, `evidence/`) as **Must fix**.
+2. **Context.** Read the diff and the callers, callees, and tests it connects to. If `.neckbeard.json` exists, compare the diff against its `boundaries` map and flag any unreviewed trust-boundary expansion (`+new` external ingress/egress/supply or internal auth/data/exec/ai sinks) for explicit gate verification. If `.ai-audit/` (VIBES protocol) exists, check high-risk PRISM annotations (`risk_score >= 0.60` in `.ai-audit/annotations.jsonl`) on changed files, and flag any direct edit or deletion of immutable `.ai-audit/` provenance artifacts (`manifest.json`, `annotations.jsonl`, `blobs/`, `attestations/`, `incidents/`, `evidence/`) as **Must fix**.
 3. **Gates.** Read the three gates (`Safe`, `Fast and scalable at the named number`, `Done`), the question ladder, and the accepted-risk rules from `skills/neckbeard/SKILL.md` rather than copying them. Say the load you assumed.
 4. **Prove every finding.** A finding needs a concrete case:
    - **Security:** who sends what and what they get.

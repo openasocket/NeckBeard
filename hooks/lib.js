@@ -1,5 +1,5 @@
 'use strict';
-// Shared by every neckbeard hook: levels, per-session state, hook I/O.
+// Shared by every neckbeard hook: levels, per-session state, guard telemetry counters, hook I/O.
 // No dependencies, no network, writes only its own state files.
 
 const fs = require('fs');
@@ -15,13 +15,24 @@ function normalizeLevel(value) {
   return v === 'off' || LEVELS.includes(v) ? v : null;
 }
 
+function configBase(env = process.env) {
+  return env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+}
+
+function claudeDir(env = process.env) {
+  return env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+}
+
+function bandDir(env = process.env) {
+  return path.join(configBase(env), 'neckbeard', 'band');
+}
+
 // NECKBEARD_LEVEL beats the config file; anything unreadable falls back to full.
 function defaultLevel(env = process.env) {
   const fromEnv = normalizeLevel(env.NECKBEARD_LEVEL);
   if (fromEnv) return fromEnv;
   try {
-    const base = env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-    const cfg = JSON.parse(fs.readFileSync(path.join(base, 'neckbeard', 'config.json'), 'utf8'));
+    const cfg = JSON.parse(fs.readFileSync(path.join(configBase(env), 'neckbeard', 'config.json'), 'utf8'));
     return normalizeLevel(cfg.defaultLevel) || DEFAULT_LEVEL;
   } catch {
     return DEFAULT_LEVEL;
@@ -54,11 +65,48 @@ function readLevel(sessionId, env = process.env) {
 
 function writeLevel(sessionId, level, env = process.env) {
   const file = statePath(sessionId, env);
-  if (!file) return;
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, level, { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  if (file) {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, level, { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  }
+  // Also sync the active level flag in stateDir (and CLAUDE_CONFIG_DIR when writable) for the Claude Code band & statusline.
+  try {
+    const dir = stateDir(env);
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(dir, '.neckbeard-active'), level, { mode: 0o600 });
+  } catch { /* best-effort */ }
+}
+
+// Local-only security telemetry counter for PreToolUse guard blocks (never records secret values).
+function guardStatsPath(env = process.env) {
+  return path.join(stateDir(env), 'guard-stats.json');
+}
+
+function recordGuardBlock(sessionId, kind, cwd = process.cwd(), env = process.env) {
+  try {
+    const file = guardStatsPath(env);
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    let data = { total: 0, sessions: {}, projects: {} };
+    try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* fresh */ }
+    data.total = (Number(data.total) || 0) + 1;
+    const sid = String(sessionId || 'default');
+    const proj = path.basename(path.resolve(cwd || process.cwd())) || 'default';
+    data.sessions[sid] = (Number(data.sessions[sid]) || 0) + 1;
+    if (!data.projects[proj]) data.projects[proj] = { blocks: 0, byKind: {} };
+    data.projects[proj].blocks = (Number(data.projects[proj].blocks) || 0) + 1;
+    data.projects[proj].byKind[kind] = (Number(data.projects[proj].byKind[kind]) || 0) + 1;
+    fs.writeFileSync(file, JSON.stringify(data), { mode: 0o600 });
+  } catch { /* best-effort */ }
+}
+
+function readGuardStats(env = process.env) {
+  try {
+    return JSON.parse(fs.readFileSync(guardStatsPath(env), 'utf8'));
+  } catch {
+    return { total: 0, sessions: {}, projects: {} };
+  }
 }
 
 // Hooks get one JSON object on stdin. Never hang the session on a stuck pipe or unbounded payload.
@@ -71,7 +119,7 @@ function readInput(timeoutMs = 1000) {
     const finish = () => {
       if (done) return;
       done = true;
-      try { resolve(JSON.parse(raw.replace(/^﻿/, '') || '{}')); } catch { resolve({}); }
+      try { resolve(JSON.parse(raw.replace(/^\uFEFF/, '') || '{}')); } catch { resolve({}); }
     };
     process.stdin.setEncoding('utf8');
     process.stdin.on('data', (c) => {
@@ -109,6 +157,7 @@ function rules(level) {
 }
 
 module.exports = {
-  LEVELS, DEFAULT_LEVEL, normalizeLevel, defaultLevel, statePath, readLevel, writeLevel,
+  LEVELS, DEFAULT_LEVEL, normalizeLevel, defaultLevel, stateDir, statePath, readLevel, writeLevel,
+  configBase, claudeDir, bandDir, recordGuardBlock, readGuardStats,
   readInput, emitContext, emitDeny, rules,
 };

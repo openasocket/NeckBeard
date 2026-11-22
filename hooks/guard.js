@@ -1,13 +1,14 @@
 'use strict';
 // PreToolUse guard. Only high-confidence patterns, so it rarely fires on legitimate work.
-//   full:     blocks hard-coded secrets and direct tampering with immutable VIBES .ai-audit/ files.
+//   full:     blocks hard-coded secrets, unsanitized .neckbeard.json writes, and direct tampering with immutable VIBES .ai-audit/ files.
 //   paranoid: also blocks pipe-to-shell installs, disabled TLS checks,
 //             world-writable permissions, skipped git hooks, and literal credentials.
 //   lite/off: does nothing.
-// A block names the kind of violation and where it is, never a secret's value.
+// A block names the kind of violation and where it is, never a secret's value, and increments local guard telemetry.
 
 const path = require('path');
-const { readInput, readLevel, emitDeny } = require('./lib');
+const { readInput, readLevel, recordGuardBlock, emitDeny } = require('./lib');
+const { checkNeckbeardJson } = require('./surface');
 
 const SECRETS = [
   ['private key', /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----/],
@@ -118,6 +119,14 @@ function check(tool, input, level) {
   if (!text) return null;
   const where = tool === 'Bash' ? 'this command' : `${(input && (input.file_path || input.notebook_path)) || 'this file'}`;
 
+  // Censor check on .neckbeard.json so no URLs, internal hostnames, IPs, or local absolute paths can be written to it.
+  if (tool === 'Write' && /(?:^|[\\/])\.neckbeard\.json$/.test(where)) {
+    const badCfg = checkNeckbeardJson(text);
+    if (badCfg) {
+      return `neckbeard blocked this Write to .neckbeard.json: ${badCfg}. Use /neckbeard load <value> or /neckbeard map so the file stays strictly censored.`;
+    }
+  }
+
   const secret = findSecret(text, level);
   if (secret) {
     return `neckbeard blocked this ${tool}: it contains a ${secret.kind} (${where}, line ${secret.line}). ` +
@@ -142,6 +151,10 @@ if (require.main === module) {
     if (process.env.NECKBEARD_GUARD === '0') return;
     const input = await readInput();
     const reason = check(input.tool_name, input.tool_input, readLevel(input.session_id));
-    if (reason) emitDeny(reason);
+    if (reason) {
+      const kind = reason.includes('VIBES') ? 'vibes-tamper' : reason.includes('.neckbeard.json') ? 'config-censor' : reason.includes('(paranoid)') ? 'unsafe-op' : 'secret';
+      recordGuardBlock(input.session_id, kind, input.cwd || process.cwd());
+      emitDeny(reason);
+    }
   })().finally(() => setTimeout(() => process.exit(0), 0));
 }

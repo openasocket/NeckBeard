@@ -1,22 +1,26 @@
 'use strict';
-// Attack-surface map: which files take untrusted input and which reach dangerous sinks.
-// Regex over tracked source files, file paths only (no code text reaches the model),
-// inside a character budget. It points the agent at what to read; it proves nothing.
+// Attack-surface & internal/external trust-boundary map, persistent project load config (.neckbeard.json),
+// per-boundary load envelopes, boundary-expansion drift detection, and risk: load-trigger expiry checks.
+// Regex over tracked source files, file paths and closed sink enums only (no raw code, URLs, hostnames, or secrets),
+// inside a strict character budget. Shared in .neckbeard.json by default; `/neckbeard share off` moves it local.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 
 const BUDGET = Number(process.env.NECKBEARD_SURFACE_CHARS || 1500);
+const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 680);
 const MAX_FILES = 3000;
 const MAX_BYTES = 200 * 1024;
-const SRC = /\.(py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|java|kt|php|cs|swift|sh)$/;
+const SRC = /\.(py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|java|kt|php|cs|swift|sh|yml|yaml)$/;
 const SKIP = /(^|\/)(node_modules|vendor|dist|build|out|target|coverage|\.next|\.venv|venv|__pycache__|tests?|__tests__|spec|fixtures|migrations)(\/|$)|\.(test|spec|min|d)\.[a-z]+$/;
 const SAFE_PATH = /^[\w.@+\/-]+$/; // a path with odd characters is skipped, never echoed
 
 const CATEGORIES = [
   ['entry points (HTTP, RPC, CLI, queues)', /\b(?:app|router|server|api|hono)\.(?:get|post|put|patch|delete|all|use|route)\s*\(|@(?:app|router|bp)\.(?:route|get|post|put|delete)\b|@(?:Get|Post|Put|Delete|Patch|RequestMapping|Controller)\b|\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\b|\bhttp\.HandleFunc\b|\bfetch\s*\(\s*req(?:uest)?\b|\baddEventListener\(\s*['"]fetch['"]|\bargparse\b|\bprocess\.argv\b|\bconsumer\.|\bon_message\b/],
-  ['shell and code execution', /\bchild_process\b|\bexecSync\s*\(|\bspawn(?:Sync)?\s*\(|\bsubprocess\.|\bos\.system\s*\(|\bos\.popen\s*\(|\beval\s*\(|\bnew Function\s*\(|\bexec\.Command\s*\(|\bRuntime\.getRuntime\(\)\.exec\b|`[^`]*\$\(/],
+  ['shell and code execution', /\bchild_process\b|\bexec(?:File)?Sync\s*\(|\bspawn(?:Sync)?\s*\(|\bsubprocess\.|\bos\.system\s*\(|\bos\.popen\s*\(|\beval\s*\(|\bnew Function\s*\(|\bexec\.Command\s*\(|\bRuntime\.getRuntime\(\)\.exec\b|`[^`]*\$\(/],
   ['raw SQL', /\b(?:SELECT|INSERT|UPDATE|DELETE)\b[^;\n]{0,80}\b(?:FROM|INTO|SET|WHERE)\b[^\n]*(?:\$\{|\+\s*\w|%s|f["']|\.format\()|\.(?:raw|unsafe|exec)\s*\(\s*[`'"]|\bexecute\s*\(\s*f["']/i],
   ['deserialization and parsers', /\bpickle\.loads?\b|\byaml\.load\s*\((?![^)]*SafeLoader)|\bmarshal\.loads\b|\bObjectInputStream\b|\bunserialize\s*\(|\bXMLParser\b|\bDOMParser\b|\bxml2js\b|\blibxml\b/],
   ['outbound requests (SSRF)', /\bfetch\s*\(\s*(?!['"`]https?:)[^)]|\baxios\.(?:get|post|request)\s*\(\s*(?!['"`])|\brequests\.(?:get|post|request)\s*\(\s*(?!['"])|\burllib\.request\.urlopen\b|\bhttp\.Get\s*\(\s*[a-z]/],
@@ -24,8 +28,23 @@ const CATEGORIES = [
   ['auth, sessions and tokens', /\bjwt\b|\bjsonwebtoken\b|\bbcrypt\b|\bargon2\b|\bpassport\b|\bsession\b|\bset-cookie\b|\bsetCookie\b|\bauthorization\b|\boauth\b|\bcsrf\b|\bverifyToken\b|\bapi[_-]?key\b/i],
   ['crypto and randomness', /\bcreateCipher(?:iv)?\b|\bcreateHash\s*\(\s*['"](?:md5|sha1)['"]|\bhashlib\.(?:md5|sha1)\b|\bMath\.random\s*\(|\brandom\.(?:random|randint|choice)\s*\(|\bDES\b|\bECB\b/],
   ['secrets and config from the environment', /\bprocess\.env\.[A-Z_]*(?:KEY|SECRET|TOKEN|PASS|PRIVATE)[A-Z_]*|\bos\.environ\b[^\n]*(?:KEY|SECRET|TOKEN|PASS)|\benv\.[A-Z_]*(?:KEY|SECRET|TOKEN)[A-Z_]*/],
-  ['LLM and agent calls (prompt injection)', /\banthropic\b|\bopenai\b|\bmessages\.create\s*\(|\bchat\.completions\b|\btool_use\b|\bfunction_call\b|\bmcp\b|\bMcpServer\b|\blangchain\b/i],
+  ['LLM and agent calls (prompt injection)', /\banthropic\b|\bopenai\b|\bmessages\.create\s*\(|\bchat\.completions\b|\btool_use\b|\bfunction_call\b|\bmcp\b|\bMcpServer\b|\blangchain\b|\badditionalContext\b/i],
 ];
+
+// Closed enum of allowed boundary sink tags in .neckbeard.json.
+const ALLOWED_SINKS = new Set([
+  'http-in', 'cli-in', 'webhook-in', 'http-out', 'ci',
+  'auth', 'sql', 'fs', 'proc', 'serde', 'crypto', 'env', 'ai',
+]);
+
+// Allowed keys for per-boundary load overrides (boundaryLoad in .neckbeard.json).
+const ALLOWED_LOAD_KEYS = new Set([
+  ...ALLOWED_SINKS,
+  'ingress', 'egress', 'supply', 'data', 'exec',
+]);
+
+// Patterns that must always be censored from load strings or boundary entries.
+const SENSITIVE_TEXT = /(?:https?:\/\/\S+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[\w.+-]+@[\w-]+\.[\w.-]+\b|\b[\w-]+\.(?:internal|corp|local|lan|amazonaws\.com|rds\.amazonaws\.com|svc\.cluster\.local)\b|\/(?:Users|home|private|var\/folders)\/\S+|[A-Za-z]:\\\S+|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|npm_[A-Za-z0-9]{20,})\b)/gi;
 
 function listFiles(root) {
   try {
@@ -41,7 +60,8 @@ function listFiles(root) {
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
+      if (e.name === '.git' || e.name === 'node_modules') continue;
+      if (e.name.startsWith('.') && e.name !== '.github') continue;
       const rel = path.relative(root, path.join(dir, e.name)).split(path.sep).join('/');
       if (e.isDirectory()) { if (!SKIP.test(rel + '/')) walk(path.join(dir, e.name), depth + 1); } else out.push(rel);
     }
@@ -50,7 +70,7 @@ function listFiles(root) {
 }
 
 function buildSurface(root) {
-  const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
+  const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f) && !/\.(yml|yaml)$/.test(f)).slice(0, MAX_FILES);
   const hits = CATEGORIES.map(() => []);
   for (const f of files) {
     let text;
@@ -76,6 +96,377 @@ function buildSurface(root) {
   return 'Attack-surface map (files matched by pattern; read them before changing code that crosses these boundaries):\n' + lines.join('\n');
 }
 
-module.exports = { buildSurface, CATEGORIES };
+// Builds the concise two-tier (external & internal) trust-boundary map for a project.
+function buildBoundaryMap(root = process.cwd()) {
+  const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
+  const ext = { ingress: [], egress: [], supply: [] };
+  const int = { auth: [], data: [], exec: [], ai: [] };
+  const add = (arr, item) => { if (arr.length < 6 && !arr.includes(item)) arr.push(item); };
+
+  for (const f of files) {
+    if (/^\.github\/workflows\/.+\.(?:yml|yaml)$/.test(f)) {
+      add(ext.supply, `${f}->ci`);
+      continue;
+    }
+    if (/\.(?:yml|yaml)$/.test(f)) continue;
+    let text;
+    try {
+      const full = path.join(root, f);
+      const st = fs.lstatSync(full);
+      if (!st.isFile() || st.size > MAX_BYTES) continue;
+      text = fs.readFileSync(full, 'utf8');
+    } catch { continue; }
+
+    // External ingress, egress
+    if (CATEGORIES[0][1].test(text)) {
+      const tag = /\b(?:process\.argv|argparse|readInput)\b/.test(text) ? 'cli-in' : /\b(?:webhook|consumer\.|on_message)\b/i.test(text) ? 'webhook-in' : 'http-in';
+      add(ext.ingress, `${f}->${tag}`);
+    }
+    if (CATEGORIES[4][1].test(text)) add(ext.egress, `${f}->http-out`);
+
+    // Internal auth, data, exec, ai
+    if (CATEGORIES[6][1].test(text)) add(int.auth, `${f}->auth`);
+    const dataTags = [];
+    if (CATEGORIES[2][1].test(text)) dataTags.push('sql');
+    if (CATEGORIES[5][1].test(text)) dataTags.push('fs');
+    if (CATEGORIES[3][1].test(text)) dataTags.push('serde');
+    if (dataTags.length) add(int.data, `${f}->${dataTags.join(',')}`);
+
+    const execTags = [];
+    if (CATEGORIES[1][1].test(text)) execTags.push('proc');
+    if (CATEGORIES[7][1].test(text)) execTags.push('crypto');
+    if (CATEGORIES[8][1].test(text)) execTags.push('env');
+    if (execTags.length) add(int.exec, `${f}->${execTags.join(',')}`);
+
+    if (CATEGORIES[9][1].test(text)) add(int.ai, `${f}->ai`);
+  }
+
+  return { external: ext, internal: int };
+}
+
+function flattenBoundaries(b = {}) {
+  const ext = (b && b.external) || {};
+  const int = (b && b.internal) || {};
+  const out = [];
+  for (const k of ['ingress', 'egress', 'supply']) {
+    for (const item of ext[k] || []) if (!out.includes(item)) out.push(item);
+  }
+  for (const k of ['auth', 'data', 'exec', 'ai']) {
+    for (const item of int[k] || []) if (!out.includes(item)) out.push(item);
+  }
+  return out;
+}
+
+// Compares a saved baseline boundary map with the current live boundary map to flag boundary expansion.
+function diffBoundaryMap(baseline = {}, current = {}) {
+  const baseSet = new Set(flattenBoundaries(baseline));
+  const curList = flattenBoundaries(current);
+  const curSet = new Set(curList);
+  const added = curList.filter((item) => !baseSet.has(item));
+  const removed = [...baseSet].filter((item) => !curSet.has(item));
+  return { added, removed };
+}
+
+function detectBoundaryDrift(root = process.cwd(), env = process.env) {
+  const cfg = readProjectConfig(root, env);
+  if (!cfg || !cfg.boundaries) return { added: [], removed: [] };
+  const hasSaved = flattenBoundaries(cfg.boundaries).length > 0;
+  if (!hasSaved) return { added: [], removed: [] };
+  return diffBoundaryMap(cfg.boundaries, buildBoundaryMap(root));
+}
+
+function sanitizeLoad(load) {
+  if (typeof load !== 'string') return '';
+  return load
+    .replace(SENSITIVE_TEXT, '[redacted]')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 160);
+}
+
+function sanitizeBoundaryLoad(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const key = String(k || '').trim().toLowerCase();
+    if (!ALLOWED_LOAD_KEYS.has(key)) continue;
+    const clean = sanitizeLoad(String(v || ''));
+    if (clean) out[key] = clean;
+  }
+  return out;
+}
+
+function sanitizeEntry(entry) {
+  if (typeof entry !== 'string') return null;
+  const trimmed = entry.trim();
+  if (!trimmed || SENSITIVE_TEXT.test(trimmed)) {
+    SENSITIVE_TEXT.lastIndex = 0;
+    return null;
+  }
+  SENSITIVE_TEXT.lastIndex = 0;
+  const [rawFile, rawSinks] = trimmed.split('->');
+  const norm = path.posix.normalize(String(rawFile || '').replace(/\\/g, '/').trim());
+  if (!norm || norm === '.' || norm.startsWith('/') || norm.startsWith('..') || !SAFE_PATH.test(norm)) return null;
+  if (/^(?:Users|home|private|var|tmp|etc)\//.test(norm)) return null;
+  if (!rawSinks) return norm;
+  const sinks = rawSinks.split(',').map((s) => s.trim()).filter((s) => ALLOWED_SINKS.has(s));
+  return sinks.length ? `${norm}->${sinks.join(',')}` : norm;
+}
+
+function sanitizeList(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const item of list) {
+    const clean = sanitizeEntry(item);
+    if (clean && !out.includes(clean) && out.length < 6) out.push(clean);
+  }
+  return out;
+}
+
+// Censors and normalizes a .neckbeard.json object so no secrets, URLs, hostnames, IPs, or absolute paths can be stored.
+function sanitizeProjectConfig(cfg = {}) {
+  const b = (cfg && cfg.boundaries) || {};
+  const ext = b.external || {};
+  const int = b.internal || {};
+  const boundaryLoad = sanitizeBoundaryLoad(cfg.boundaryLoad);
+  const out = {
+    shared: cfg.shared !== false,
+    load: sanitizeLoad(cfg.load || ''),
+  };
+  if (Object.keys(boundaryLoad).length > 0) out.boundaryLoad = boundaryLoad;
+  out.boundaries = {
+    external: {
+      ingress: sanitizeList(ext.ingress),
+      egress: sanitizeList(ext.egress),
+      supply: sanitizeList(ext.supply),
+    },
+    internal: {
+      auth: sanitizeList(int.auth),
+      data: sanitizeList(int.data),
+      exec: sanitizeList(int.exec),
+      ai: sanitizeList(int.ai),
+    },
+  };
+  return out;
+}
+
+// Validates a raw JSON string written to .neckbeard.json by an agent tool call; returns a denial reason if unsafe.
+function checkNeckbeardJson(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return 'invalid JSON in .neckbeard.json';
+  }
+  const raw = String(text || '');
+  SENSITIVE_TEXT.lastIndex = 0;
+  const m = SENSITIVE_TEXT.exec(raw);
+  SENSITIVE_TEXT.lastIndex = 0;
+  if (m) {
+    return `sensitive value or absolute path/URL ("${m[0].slice(0, 24)}...") in .neckbeard.json. Store only numeric load targets and repo-relative file paths with closed sink tags`;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return '.neckbeard.json must be a JSON object';
+  }
+  return null;
+}
+
+// Parses numeric load metrics (rps, rpm, rows, users/concurrent, mb) from a load string or risk: trigger.
+function parseLoadMetrics(text) {
+  const s = String(text || '').toLowerCase();
+  const metrics = {};
+  const re = /(\d+(?:\.\d+)?)\s*([km])?\s*(rps|req\/s|req\/sec|requests\/s|requests\/sec|qps|rpm|req\/m|req\/min|requests\/min|rows?|records?|items?|entries|users?|clients?|tenants?|writers?|concurrent(?:\s+\w+)?|kb|mb|gb|tb)\b/g;
+  for (const m of s.matchAll(re)) {
+    let val = Number(m[1]);
+    if (m[2] === 'k') val *= 1000;
+    if (m[2] === 'm') val *= 1000000;
+    const u = m[3];
+    let key = 'other';
+    if (/^(rps|req\/s|req\/sec|requests\/s|requests\/sec|qps)$/.test(u)) key = 'rps';
+    else if (/^(rpm|req\/m|req\/min|requests\/min)$/.test(u)) key = 'rpm';
+    else if (/^(rows?|records?|items?|entries)$/.test(u)) key = 'rows';
+    else if (/^(users?|clients?|tenants?|writers?|concurrent)/.test(u)) key = 'users';
+    else if (/^(kb|mb|gb|tb)$/.test(u)) {
+      key = 'mb';
+      if (u === 'kb') val /= 1024;
+      if (u === 'gb') val *= 1024;
+      if (u === 'tb') val *= 1024 * 1024;
+    }
+    if (key !== 'other') metrics[key] = Math.max(metrics[key] || 0, val);
+  }
+  return metrics;
+}
+
+// Checks whether a `risk:` comment's revisit trigger has been reached or exceeded by the project's load in .neckbeard.json.
+function checkRiskLoadExpiry(commentText, projectLoadOrConfig) {
+  const raw = String(commentText || '');
+  // Extract the revisit/trigger tail if present (e.g. after "revisit", "when", ">", ">=", "above", "exceeds", or the last comma).
+  const triggerMatch = /(?:revisit\b[^,;]*|when\b[^,;]*|(?:>|>=|above|over|exceeds|past)\s*\d[\s\S]*)$/i.exec(raw);
+  const triggerPart = triggerMatch ? triggerMatch[0] : (raw.split(',').slice(2).join(',') || raw);
+  const triggerMetrics = parseLoadMetrics(triggerPart);
+  if (Object.keys(triggerMetrics).length === 0) return { expired: false };
+
+  let loadStrings = [];
+  if (typeof projectLoadOrConfig === 'string') {
+    loadStrings.push(projectLoadOrConfig);
+  } else if (projectLoadOrConfig && typeof projectLoadOrConfig === 'object') {
+    if (projectLoadOrConfig.load) loadStrings.push(projectLoadOrConfig.load);
+    if (projectLoadOrConfig.boundaryLoad) loadStrings.push(...Object.values(projectLoadOrConfig.boundaryLoad));
+  }
+  const currentMetrics = parseLoadMetrics(loadStrings.join(' '));
+  for (const [unit, threshold] of Object.entries(triggerMetrics)) {
+    const current = currentMetrics[unit];
+    if (typeof current === 'number' && current >= threshold) {
+      return {
+        expired: true,
+        unit,
+        triggerValue: threshold,
+        currentValue: current,
+        reason: `current project load (${current} ${unit}) >= revisit trigger (${threshold} ${unit})`,
+      };
+    }
+  }
+  return { expired: false };
+}
+
+function localProjectFile(root = process.cwd(), env = process.env) {
+  const base = env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  const key = createHash('sha256').update(path.resolve(root)).digest('hex').slice(0, 16);
+  const name = path.basename(path.resolve(root)).replace(/[^\w.-]/g, '_') || 'project';
+  return path.join(base, 'neckbeard', 'projects', `${name}-${key}.json`);
+}
+
+function sharedProjectFile(root = process.cwd()) {
+  return path.join(root, '.neckbeard.json');
+}
+
+function setGitExclude(root, excluded) {
+  try {
+    const excludeFile = path.join(root, '.git', 'info', 'exclude');
+    if (!fs.existsSync(path.dirname(excludeFile))) return;
+    let current = '';
+    try { current = fs.readFileSync(excludeFile, 'utf8'); } catch { /* empty */ }
+    const lines = current.split('\n').filter((l) => l.trim() !== '.neckbeard.json');
+    if (excluded) lines.push('.neckbeard.json');
+    fs.writeFileSync(excludeFile, lines.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n');
+  } catch { /* best-effort */ }
+}
+
+function readProjectConfig(root = process.cwd(), env = process.env) {
+  const localFile = localProjectFile(root, env);
+  const sharedFile = sharedProjectFile(root);
+  try {
+    if (fs.existsSync(localFile)) {
+      const localCfg = sanitizeProjectConfig(JSON.parse(fs.readFileSync(localFile, 'utf8')));
+      if (localCfg.shared === false) return localCfg;
+    }
+  } catch { /* fall through */ }
+  try {
+    if (fs.existsSync(sharedFile)) {
+      return sanitizeProjectConfig(JSON.parse(fs.readFileSync(sharedFile, 'utf8')));
+    }
+  } catch { /* fall through */ }
+  return null;
+}
+
+function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env) {
+  const existing = readProjectConfig(root, env) || {
+    shared: true,
+    load: '',
+    boundaryLoad: {},
+    boundaries: buildBoundaryMap(root),
+  };
+  const nextBoundaryLoad = { ...(existing.boundaryLoad || {}), ...(patch.boundaryLoad || {}) };
+  for (const [k, v] of Object.entries(nextBoundaryLoad)) {
+    if (v === null || v === '') delete nextBoundaryLoad[k];
+  }
+  const merged = sanitizeProjectConfig({
+    shared: patch.shared !== undefined ? patch.shared : existing.shared,
+    load: patch.load !== undefined ? patch.load : existing.load,
+    boundaryLoad: nextBoundaryLoad,
+    boundaries: patch.boundaries || existing.boundaries,
+  });
+
+  const localFile = localProjectFile(root, env);
+  const sharedFile = sharedProjectFile(root);
+
+  if (merged.shared === false) {
+    fs.mkdirSync(path.dirname(localFile), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(localFile, JSON.stringify(merged, null, 2) + '\n', { mode: 0o600 });
+    try { if (fs.existsSync(sharedFile)) fs.unlinkSync(sharedFile); } catch { /* ignore */ }
+    try {
+      execFileSync('git', ['rm', '--cached', '-f', '.neckbeard.json'], { cwd: root, stdio: 'ignore', timeout: 1500 });
+    } catch { /* not tracked */ }
+    setGitExclude(root, true);
+  } else {
+    setGitExclude(root, false);
+    fs.writeFileSync(sharedFile, JSON.stringify(merged, null, 2) + '\n');
+    try { if (fs.existsSync(localFile)) fs.unlinkSync(localFile); } catch { /* ignore */ }
+  }
+  return merged;
+}
+
+// Formats the concise, token-efficient load + per-boundary overrides + external/internal map + boundary drift alert.
+function formatProjectContext(root = process.cwd(), env = process.env) {
+  const cfg = readProjectConfig(root, env);
+  const liveMap = buildBoundaryMap(root);
+  const map = cfg && cfg.boundaries ? cfg.boundaries : liveMap;
+  const ext = (map && map.external) || {};
+  const int = (map && map.internal) || {};
+
+  const fmtGroup = (obj, keys) => keys
+    .map((k) => (Array.isArray(obj[k]) && obj[k].length ? `${k}:${obj[k].slice(0, 4).join(',')}` : ''))
+    .filter(Boolean)
+    .join(' | ');
+
+  const extLine = fmtGroup(ext, ['ingress', 'egress', 'supply']);
+  const intLine = fmtGroup(int, ['auth', 'data', 'exec', 'ai']);
+
+  const overrides = cfg && cfg.boundaryLoad && Object.keys(cfg.boundaryLoad).length
+    ? ` [per-boundary: ${Object.entries(cfg.boundaryLoad).map(([k, v]) => `${k}=${v}`).join('; ')}]`
+    : '';
+
+  const lines = [];
+  if (cfg && cfg.load) {
+    lines.push(`Load default (${cfg.shared === false ? 'local' : '.neckbeard.json, shared'}): ${cfg.load}${overrides}`);
+  } else if (overrides) {
+    lines.push(`Load default (${cfg.shared === false ? 'local' : '.neckbeard.json, shared'}):${overrides}`);
+  } else {
+    lines.push('Load default: unset (if Fast gate applies and prompt/repo gives no load, ask once and save with /neckbeard load <value> or to .neckbeard.json)');
+  }
+  if (extLine) lines.push(`Trust Map [ext] ${extLine}`);
+  if (intLine) lines.push(`Trust Map [int] ${intLine}`);
+
+  if (cfg && cfg.boundaries && flattenBoundaries(cfg.boundaries).length > 0) {
+    const drift = diffBoundaryMap(cfg.boundaries, liveMap);
+    if (drift.added.length > 0) {
+      lines.push(`Boundary Drift [new]: +${drift.added.length} unreviewed (${drift.added.slice(0, 3).join(', ')}) — verify in /neckbeard-review or run /neckbeard map`);
+    }
+  }
+  return lines.join('\n').slice(0, MAP_BUDGET);
+}
+
+module.exports = {
+  buildSurface,
+  buildBoundaryMap,
+  flattenBoundaries,
+  diffBoundaryMap,
+  detectBoundaryDrift,
+  sanitizeLoad,
+  sanitizeBoundaryLoad,
+  sanitizeProjectConfig,
+  checkNeckbeardJson,
+  parseLoadMetrics,
+  checkRiskLoadExpiry,
+  readProjectConfig,
+  writeProjectConfig,
+  formatProjectContext,
+  localProjectFile,
+  sharedProjectFile,
+  ALLOWED_SINKS,
+  ALLOWED_LOAD_KEYS,
+  CATEGORIES,
+};
 
 if (require.main === module) process.stdout.write(buildSurface(process.argv[2] || process.cwd()) + '\n');

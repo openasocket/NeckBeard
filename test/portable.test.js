@@ -48,6 +48,15 @@ test('skill directory layout', () => {
     'skills/neckbeard-review/SKILL.md',
     'skills/neckbeard-audit/SKILL.md',
     'skills/neckbeard-debt/SKILL.md',
+    'skills/neckbeard-gain/SKILL.md',
+    'hooks/claude-band.json',
+    'hooks/band/register.tsx',
+    'hooks/band/metrics.ts',
+    'hooks/band/board.ts',
+    'hooks/band-import.js',
+    'hooks/vibes.js',
+    'pi-extension/index.js',
+    '.opencode/plugins/neckbeard.mjs',
     'AGENTS.md',
   ]) {
     assert.strictEqual(fs.existsSync(p(required)), true, `${required} must exist`);
@@ -121,6 +130,9 @@ test('review, audit, and copilot instructions content', () => {
 
   const audit = readText('skills/neckbeard-audit/SKILL.md');
   assert.ok(audit.trimEnd().split('\n').length <= 90, 'neckbeard-audit must be <= 90 lines');
+  assert.match(audit, /Modes:\s*`lite`\s*\(default\)\s*vs\.\s*`complete`/);
+  assert.match(audit, /every single tracked code, configuration, script, workflow, and documentation file/i);
+  assert.match(audit, /long time, consume a large number of tokens, and require many tool calls/i);
   assert.match(audit, /variant search/i);
   assert.match(audit, /Say when you stopped/);
   assert.match(audit, /Do not search past the findings in this report/);

@@ -8,7 +8,20 @@ const { spawnSync } = require('child_process');
 
 const { check, findSecret, findVibesTamper } = require('../hooks/guard');
 const { parseCommand } = require('../hooks/prompt');
-const { buildSurface } = require('../hooks/surface');
+const {
+  buildSurface,
+  buildBoundaryMap,
+  diffBoundaryMap,
+  detectBoundaryDrift,
+  parseLoadMetrics,
+  checkRiskLoadExpiry,
+  sanitizeProjectConfig,
+  readProjectConfig,
+  writeProjectConfig,
+  formatProjectContext,
+} = require('../hooks/surface');
+const { readVibesTelemetry, formatVibesContext } = require('../hooks/vibes');
+const { formatSummary } = require('../hooks/band-import');
 
 const HOOKS = path.join(__dirname, '..', 'hooks');
 // Fake secrets are assembled at runtime so this file never holds one verbatim.
@@ -174,4 +187,198 @@ test('surface map lists file paths by category, never code', () => {
   assert.match(map, /shell and code execution[^\n]*server\.js/);
   assert.ok(!map.includes('req.query'));
   assert.ok(!map.includes('odd name'));
+});
+
+test('project load persistence, internal/external trust-boundary map, censorship, and share toggle', () => {
+  const dir = tmpState();
+  const cfgHome = tmpState();
+  const env = { ...process.env, NECKBEARD_STATE_DIR: tmpState(), XDG_CONFIG_HOME: cfgHome };
+
+  fs.mkdirSync(path.join(dir, '.git', 'info'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.github', 'workflows', 'ci.yml'), 'name: ci\n');
+  fs.writeFileSync(
+    path.join(dir, 'api.js'),
+    "app.post('/pay', (req, res) => { fetch(req.body.url); jwt.verify(req.headers.authorization, process.env.JWT_SECRET); });\n"
+  );
+
+  // Build internal & external boundary map
+  const bmap = buildBoundaryMap(dir);
+  assert.ok(bmap.external.ingress.includes('api.js->http-in'));
+  assert.ok(bmap.external.egress.includes('api.js->http-out'));
+  assert.ok(bmap.external.supply.includes('.github/workflows/ci.yml->ci'));
+  assert.ok(bmap.internal.auth.includes('api.js->auth'));
+  assert.ok(bmap.internal.exec.includes('api.js->env'));
+
+  const absPath = '/' + 'Users/alice/secret.js->http-in';
+  // Save load default (shared by default in .neckbeard.json) with sensitive info that must be censored
+  const saved = writeProjectConfig(dir, {
+    load: '250 rps, 50k rows on https://internal.acme.com:8443 and 10.0.0.12 by alice@acme.com',
+    boundaries: {
+      external: {
+        ingress: ['api.js->http-in', absPath, 'api.js->evil-tag'],
+        egress: ['api.js->http-out'],
+        supply: ['.github/workflows/ci.yml->ci'],
+      },
+      internal: bmap.internal,
+    },
+  }, env);
+
+  assert.strictEqual(saved.shared, true);
+  assert.ok(fs.existsSync(path.join(dir, '.neckbeard.json')));
+  assert.ok(!saved.load.includes('https://'));
+  assert.ok(!saved.load.includes('10.0.0.12'));
+  assert.ok(!saved.load.includes('alice@acme.com'));
+  assert.ok(saved.load.includes('250 rps, 50k rows'));
+  assert.deepStrictEqual(saved.boundaries.external.ingress, ['api.js->http-in', 'api.js']);
+
+  // Guard blocks writing raw URLs or absolute paths to .neckbeard.json
+  assert.match(
+    check('Write', { file_path: '.neckbeard.json', content: '{"load":"100 rps at https://prod.internal.example.com"}' }, 'full'),
+    /\.neckbeard\.json/
+  );
+  assert.strictEqual(
+    check('Write', { file_path: '.neckbeard.json', content: '{"shared":true,"load":"200 rps, p95 < 100ms"}' }, 'full'),
+    null
+  );
+
+  // Toggle sharing OFF via /neckbeard share off -> moves to local config and adds to .git/info/exclude
+  const offOut = run('prompt.js', { session_id: 'SH', cwd: dir, prompt: '/neckbeard share off' }, env);
+  assert.match(offOut.hookSpecificOutput.additionalContext, /sharing disabled/i);
+  assert.strictEqual(fs.existsSync(path.join(dir, '.neckbeard.json')), false);
+  assert.ok(fs.readFileSync(path.join(dir, '.git', 'info', 'exclude'), 'utf8').includes('.neckbeard.json'));
+  assert.strictEqual(readProjectConfig(dir, env).shared, false);
+  assert.ok(readProjectConfig(dir, env).load.includes('250 rps'));
+
+  // Toggle sharing back ON via /neckbeard share on -> restores .neckbeard.json and removes from exclude
+  const onOut = run('prompt.js', { session_id: 'SH', cwd: dir, prompt: '/neckbeard share on' }, env);
+  assert.match(onOut.hookSpecificOutput.additionalContext, /sharing enabled/i);
+  assert.strictEqual(fs.existsSync(path.join(dir, '.neckbeard.json')), true);
+  assert.ok(!fs.readFileSync(path.join(dir, '.git', 'info', 'exclude'), 'utf8').includes('.neckbeard.json'));
+
+  // SessionStart automatically injects the compact Load default + Trust Map [ext] / [int]
+  const startCtx = run('session-start.js', { session_id: 'SH', source: 'startup', cwd: dir }, env).hookSpecificOutput.additionalContext;
+  assert.match(startCtx, /Load default \(\.neckbeard\.json, shared\): 250 rps/);
+  assert.match(startCtx, /Trust Map \[ext\] ingress:api\.js->http-in/);
+  assert.match(startCtx, /Trust Map \[int\] auth:api\.js->auth/);
+});
+
+test('VIBES .ai-audit telemetry ingestion and local band summary', () => {
+  const dir = tmpState();
+  const cfgHome = tmpState();
+  const stateDir = tmpState();
+  const env = { ...process.env, NECKBEARD_STATE_DIR: stateDir, XDG_CONFIG_HOME: cfgHome, CLAUDE_CONFIG_DIR: tmpState() };
+
+  fs.mkdirSync(path.join(dir, '.ai-audit'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.ai-audit', 'manifest.json'),
+    JSON.stringify({ decisions: [{ id: 'DEC-1' }, { id: 'DEC-2' }] })
+  );
+  fs.writeFileSync(
+    path.join(dir, '.ai-audit', 'annotations.jsonl'),
+    [
+      JSON.stringify({ session_id: 'sess-12345678', timestamp: '2026-11-21T20:00:00Z', model: 'claude-opus-5-5', prompt: 'Harden auth endpoint', lines_added: 18, lines_removed: 42, risk_score: 0.72, verified: true, tokens_total: 4200, cost_usd: 0.14 }),
+      JSON.stringify({ session_id: 'sess-12345678', timestamp: '2026-11-21T20:02:00Z', type: 'incident', ioc_id: 'TRACE-01', status: 'resolved' }),
+    ].join('\n') + '\n'
+  );
+
+  // Trigger one guard block so guard-stats.json records a security block
+  run('guard.js', { session_id: 'sess-12345678', cwd: dir, tool_name: 'Write', tool_input: { file_path: 'a.js', content: `const k = "${AWS}";` } }, env);
+
+  const vibes = readVibesTelemetry(dir);
+  assert.strictEqual(vibes.present, true);
+  assert.strictEqual(vibes.maxPrismRisk, 0.72);
+  assert.strictEqual(vibes.highRiskCount, 1);
+  assert.strictEqual(vibes.traceIncidents, 1);
+  assert.strictEqual(vibes.traceResolved, 1);
+  assert.strictEqual(vibes.decisions, 2);
+  assert.strictEqual(vibes.linesAdded, 18);
+  assert.strictEqual(vibes.linesRemoved, 42);
+  assert.match(formatVibesContext(dir), /PRISM max risk 0\.72/);
+
+  const summary = formatSummary(dir, env);
+  assert.match(summary, /VIBES \(\.ai-audit\) : active/);
+  assert.match(summary, /1 PreToolUse blocks/);
+  assert.match(summary, /\+18 \/ -42 lines/);
+  const boardFile = path.join(cfgHome, 'neckbeard', 'band', 'board.html');
+  assert.ok(fs.existsSync(boardFile));
+  const boardHtml = fs.readFileSync(boardFile, 'utf8');
+  assert.ok(boardHtml.includes('Trust-Boundary Graph'));
+  assert.ok(boardHtml.includes('boundary-svg'));
+});
+
+test('per-boundary load envelopes, boundary-expansion drift detection, and risk: load-trigger expiry', () => {
+  const dir = tmpState();
+  const cfgHome = tmpState();
+  const env = { ...process.env, NECKBEARD_STATE_DIR: tmpState(), XDG_CONFIG_HOME: cfgHome };
+
+  fs.writeFileSync(path.join(dir, 'api.js'), "app.get('/items', (req, res) => res.send('ok'));\n");
+  writeProjectConfig(dir, {
+    load: '250 rps, 50k rows, p95 < 100ms',
+    boundaries: buildBoundaryMap(dir),
+  }, env);
+
+  // Set per-boundary load envelope via /neckbeard load webhook-in=2000 rps burst
+  const loadOut = run('prompt.js', { session_id: 'PB', cwd: dir, prompt: '/neckbeard load webhook-in=2000 rps burst' }, env);
+  assert.match(loadOut.hookSpecificOutput.additionalContext, /per-boundary load \[webhook-in\] saved/i);
+  const cfg = readProjectConfig(dir, env);
+  assert.strictEqual(cfg.boundaryLoad['webhook-in'], '2000 rps burst');
+
+  // Introduce a new unreviewed boundary sink (child_process in worker.js) and verify drift detection
+  fs.writeFileSync(path.join(dir, 'worker.js'), "const { execFileSync } = require('child_process'); execFileSync('ls');\n");
+  const drift = detectBoundaryDrift(dir, env);
+  assert.deepStrictEqual(drift.added, ['worker.js->proc']);
+  assert.match(formatProjectContext(dir, env), /Boundary Drift \[new\]: \+1 unreviewed \(worker\.js->proc\)/);
+
+  // Verify risk: load-trigger expiry against project load (250 rps, 50k rows, webhook-in=2000 rps)
+  const metrics = parseLoadMetrics('250 rps, 50k rows, 10 concurrent writers, 128 MB');
+  assert.strictEqual(metrics.rps, 250);
+  assert.strictEqual(metrics.rows, 50000);
+  assert.strictEqual(metrics.users, 10);
+  assert.strictEqual(metrics.mb, 128);
+
+  const expiredRps = checkRiskLoadExpiry('risk: in-memory rate limit, safe below 100 rps, revisit at 100 rps', cfg);
+  assert.strictEqual(expiredRps.expired, true);
+  assert.strictEqual(expiredRps.unit, 'rps');
+  assert.strictEqual(expiredRps.triggerValue, 100);
+
+  const expiredRows = checkRiskLoadExpiry('risk: full table scan, fine for small tables, revisit when > 20k rows', cfg);
+  assert.strictEqual(expiredRows.expired, true);
+  assert.strictEqual(expiredRows.unit, 'rows');
+
+  const notExpired = checkRiskLoadExpiry('risk: single-node queue, revisit at 5000 rps', cfg);
+  assert.strictEqual(notExpired.expired, false);
+});
+
+test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', async () => {
+  const piMod = await import('../pi-extension/index.js');
+  assert.strictEqual(typeof piMod.default, 'function');
+  assert.deepStrictEqual(piMod.parseNeckbeardCommand('paranoid'), { type: 'set-level', level: 'paranoid' });
+  assert.deepStrictEqual(piMod.parseNeckbeardCommand('load 300 rps'), { type: 'load', value: '300 rps' });
+  assert.deepStrictEqual(piMod.parseNeckbeardCommand('share off'), { type: 'share', value: 'off' });
+
+  const commands = {};
+  const listeners = {};
+  let statusVal;
+  piMod.default({
+    registerCommand(name, spec) { commands[name] = spec; },
+    on(evt, fn) { listeners[evt] = fn; },
+    appendEntry() {},
+    sendUserMessage() {},
+  });
+  assert.ok(commands.neckbeard && commands['neckbeard-review'] && commands['neckbeard-gain']);
+  await listeners.agent_start({}, {
+    ui: {
+      theme: { fg: (_c, t) => t },
+      setStatus(_k, v) { statusVal = v; },
+    },
+  });
+  assert.match(statusVal, /neckbeard:/);
+
+  const ocMod = await import('../.opencode/plugins/neckbeard.mjs');
+  assert.strictEqual(ocMod.default.id, 'neckbeard');
+  const v1 = await ocMod.default.server();
+  const sysOut = { system: [] };
+  await v1['experimental.chat.system.transform']({}, sysOut);
+  assert.ok(sysOut.system.length === 1 && sysOut.system[0].includes('NECKBEARD MODE ACTIVE'));
 });

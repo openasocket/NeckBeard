@@ -293,13 +293,27 @@ async function persistTelemetryAndDashboard($: EngineInterface, state: Neckbeard
   const record = serializeSessionRecord(state, startedAtMs)
   const dir = await resolveTelemetryDir($)
   const jsonlFile = `${dir}/sessions.jsonl`
+  const snapshotFile = `${dir}/sessions.snapshot.jsonl`
   const existing = await $.fs.read(jsonlFile).catch(() => '')
-  const updatedJsonl = upsertJsonlLedger(existing, record)
-  await $.fs.write(jsonlFile, updatedJsonl)
+  const snapshot = await $.fs.read(snapshotFile).catch(() => '')
+  // Prevent concurrent O_TRUNC read races across parallel Claude sessions from ever shrinking the ledger
+  const baseLedger = snapshot.length > existing.length ? snapshot : existing
+  const updatedJsonl = upsertJsonlLedger(baseLedger, record)
+  const tmpJsonl = `${jsonlFile}.${state.sessionId || 'hud'}.tmp`
+  await $.fs.write(tmpJsonl, updatedJsonl)
+  const mvRes = await $.process.run(['mv', '-f', tmpJsonl, jsonlFile]).catch(() => ({ exitCode: 1 }))
+  if (mvRes.exitCode !== 0) {
+    await $.fs.write(jsonlFile, updatedJsonl)
+  }
   const allRecords = parseJsonlRecords(updatedJsonl)
   const wsMeta = await buildCurrentWorkspaceMeta($, state)
-  const html = renderDashboardHtml(allRecords, wsMeta, await $.clock.now())
-  await $.fs.write(`${dir}/dashboard.html`, html)
+  // Only write dashboard.html directly from register.tsx if a canonical build from band-import.js is not already present
+  const dashboardFile = `${dir}/dashboard.html`
+  const existingHtml = await $.fs.read(dashboardFile).catch(() => '')
+  if (!existingHtml.includes('<!-- nb-canonical-build -->')) {
+    const html = renderDashboardHtml(allRecords, wsMeta, await $.clock.now())
+    await $.fs.write(dashboardFile, html)
+  }
 }
 
 async function launchDashboardInBrowser($: EngineInterface) {

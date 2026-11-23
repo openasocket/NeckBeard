@@ -213,40 +213,58 @@ function parseJsonlSessionFile(filePath) {
   };
 }
 
+function atomicWriteFileSync(targetPath, content) {
+  const tmpPath = `${targetPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  fs.writeFileSync(tmpPath, content);
+  try {
+    fs.renameSync(tmpPath, targetPath);
+  } catch (err) {
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw err;
+  }
+}
+
 function readExistingJsonlRecords(jsonlPath) {
   const byId = new Map();
   const sessionKeyToRecordId = new Map();
-  try {
-    if (!fs.existsSync(jsonlPath)) return byId;
-    for (const line of fs.readFileSync(jsonlPath, 'utf8').split('\n')) {
-      const t = line.trim();
-      if (!t.startsWith('{')) continue;
-      try {
-        const rec = JSON.parse(t);
-        if (!rec || !rec.recordId) continue;
-        if (rec.sessionId && sessionKeyToRecordId.has(rec.sessionId)) {
-          const prevId = sessionKeyToRecordId.get(rec.sessionId);
-          const prev = byId.get(prevId);
-          if (prev) {
-            if (STALE_TITLE_RE.test(String(prev.taskTitle || '').trim()) && !STALE_TITLE_RE.test(String(rec.taskTitle || '').trim())) {
-              prev.taskTitle = rec.taskTitle;
+  const dir = path.dirname(jsonlPath);
+  const candidateFiles = [path.join(dir, 'sessions.snapshot.jsonl'), jsonlPath];
+  for (const filePath of candidateFiles) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      for (const line of fs.readFileSync(filePath, 'utf8').split('\n')) {
+        const t = line.trim();
+        if (!t.startsWith('{')) continue;
+        try {
+          const rec = JSON.parse(t);
+          if (!rec || !rec.recordId) continue;
+          if (rec.sessionId && sessionKeyToRecordId.has(rec.sessionId)) {
+            const prevId = sessionKeyToRecordId.get(rec.sessionId);
+            const prev = byId.get(prevId);
+            if (prev) {
+              if (STALE_TITLE_RE.test(String(prev.taskTitle || '').trim()) && !STALE_TITLE_RE.test(String(rec.taskTitle || '').trim())) {
+                prev.taskTitle = rec.taskTitle;
+              }
+              if (!prev.fullPrompt && rec.fullPrompt) prev.fullPrompt = rec.fullPrompt;
+              if (!prev.assistantSummary && rec.assistantSummary) prev.assistantSummary = rec.assistantSummary;
+              if ((rec.totalCostUsd || 0) > (prev.totalCostUsd || 0)) prev.totalCostUsd = rec.totalCostUsd;
+              if ((rec.turnCount || 0) > (prev.turnCount || 0)) prev.turnCount = rec.turnCount;
+              if ((rec.activeDurationMs || 0) > (prev.activeDurationMs || 0)) prev.activeDurationMs = rec.activeDurationMs;
+              prev.reusePercent = prev.reusePercent ?? rec.reusePercent;
+              prev.reusedSymbolCount = Math.max(prev.reusedSymbolCount || 0, rec.reusedSymbolCount || 0);
+              prev.newSymbolCount = Math.max(prev.newSymbolCount || 0, rec.newSymbolCount || 0);
+              prev.linesInserted = Math.max(prev.linesInserted || 0, rec.linesInserted || 0);
+              prev.linesDeleted = Math.max(prev.linesDeleted || 0, rec.linesDeleted || 0);
+              prev.guardBlockCount = Math.max(prev.guardBlockCount || 0, rec.guardBlockCount || 0);
+              continue;
             }
-            if (!prev.fullPrompt && rec.fullPrompt) prev.fullPrompt = rec.fullPrompt;
-            if (!prev.assistantSummary && rec.assistantSummary) prev.assistantSummary = rec.assistantSummary;
-            prev.reusePercent = prev.reusePercent ?? rec.reusePercent;
-            prev.reusedSymbolCount = Math.max(prev.reusedSymbolCount || 0, rec.reusedSymbolCount || 0);
-            prev.newSymbolCount = Math.max(prev.newSymbolCount || 0, rec.newSymbolCount || 0);
-            prev.linesInserted = Math.max(prev.linesInserted || 0, rec.linesInserted || 0);
-            prev.linesDeleted = Math.max(prev.linesDeleted || 0, rec.linesDeleted || 0);
-            prev.guardBlockCount = Math.max(prev.guardBlockCount || 0, rec.guardBlockCount || 0);
-            continue;
           }
-        }
-        if (rec.sessionId) sessionKeyToRecordId.set(rec.sessionId, rec.recordId);
-        byId.set(rec.recordId, rec);
-      } catch {}
-    }
-  } catch {}
+          if (rec.sessionId) sessionKeyToRecordId.set(rec.sessionId, rec.recordId);
+          byId.set(rec.recordId, rec);
+        } catch {}
+      }
+    } catch {}
+  }
   return byId;
 }
 
@@ -255,9 +273,10 @@ function generateCommandCenterHtml(records, workspacesMeta = {}, generatedAtMs =
   const safePayload = JSON.stringify({ records, workspacesMeta, generatedAtMs }).replace(/</g, '\\u003c');
   const crestGraphic = logoUri
     ? `<img src="${logoUri}" alt="NeckBeard Mascot" style="width:46px;height:46px;border-radius:10px;border:1px solid rgba(16,185,129,0.4)">`
-    : `<span class="tp"></span>`;
+    : "";
 
   return `<!doctype html>
+<!-- nb-canonical-build -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -1420,7 +1439,12 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
     }
     return r;
   });
-  fs.writeFileSync(jsonlPath, allRecords.map((r) => JSON.stringify(r)).join('\n') + (allRecords.length ? '\n' : ''));
+  const serializedJsonl = allRecords.map((r) => JSON.stringify(r)).join('\n') + (allRecords.length ? '\n' : '');
+  atomicWriteFileSync(jsonlPath, serializedJsonl);
+  const snapshotPath = path.join(telemetryDir, 'sessions.snapshot.jsonl');
+  if (allRecords.length >= 10) {
+    try { atomicWriteFileSync(snapshotPath, serializedJsonl); } catch {}
+  }
 
   // Discover sibling project directories (e.g. under the common parent workspace directory) that have .ai-audit/ or .neckbeard.json or match recorded project names
   const parentCandidates = new Set([path.dirname(path.resolve(cwd))]);
@@ -1492,17 +1516,17 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
   }
 
   try {
-    fs.writeFileSync(path.join(telemetryDir, 'workspaces-meta.json'), JSON.stringify(workspacesMeta));
+    atomicWriteFileSync(path.join(telemetryDir, 'workspaces-meta.json'), JSON.stringify(workspacesMeta));
   } catch {}
 
   const html = generateCommandCenterHtml(allRecords, workspacesMeta, Date.now());
   const dashboardFile = path.join(telemetryDir, 'dashboard.html');
-  fs.writeFileSync(dashboardFile, html);
+  atomicWriteFileSync(dashboardFile, html);
 
   try {
     const legacyBandDir = path.join(configBase(env), 'neckbeard', 'band');
     fs.mkdirSync(legacyBandDir, { recursive: true });
-    fs.writeFileSync(path.join(legacyBandDir, 'board.html'), html);
+    atomicWriteFileSync(path.join(legacyBandDir, 'board.html'), html);
   } catch {}
 
   return {
@@ -1554,29 +1578,55 @@ if (require.main === module) {
   if (args.includes('--watch-heal')) {
     const telemetryDir = bandDir(process.env);
     const dashboardFile = path.join(telemetryDir, 'dashboard.html');
+    const jsonlFile = path.join(telemetryDir, 'sessions.jsonl');
+    const snapshotFile = path.join(telemetryDir, 'sessions.snapshot.jsonl');
     let cleanBuffer = null;
+    let cleanJsonlBuffer = null;
     try {
       const res = collectAndBuild();
       cleanBuffer = fs.readFileSync(res.boardFile);
+      cleanJsonlBuffer = fs.readFileSync(jsonlFile);
     } catch {}
     let healing = false;
+    let lastRebuildMs = Date.now();
     try {
       fs.watch(telemetryDir, (_evt, filename) => {
-        if (healing || (filename && filename !== 'dashboard.html')) return;
+        if (healing || (filename && filename !== 'dashboard.html' && filename !== 'sessions.jsonl')) return;
         try {
-          const fd = fs.openSync(dashboardFile, 'r');
-          const buf = Buffer.alloc(24576);
-          const n = fs.readSync(fd, buf, 0, buf.length, 0);
-          fs.closeSync(fd);
-          const head = buf.toString('utf8', 0, n);
-          if (head.includes('Active Engineering Velocity') || head.includes('Target load: unset')) {
+          let needsDashboardHeal = false;
+          if (fs.existsSync(dashboardFile)) {
+            const st = fs.statSync(dashboardFile);
+            const fd = fs.openSync(dashboardFile, 'r');
+            const buf = Buffer.alloc(512);
+            const n = fs.readSync(fd, buf, 0, buf.length, 0);
+            fs.closeSync(fd);
+            const head = buf.toString('utf8', 0, n);
+            if (!head.includes('<!-- nb-canonical-build -->') || (cleanBuffer && st.size < cleanBuffer.length * 0.5)) {
+              needsDashboardHeal = true;
+            }
+          }
+          let needsJsonlHeal = false;
+          if (cleanJsonlBuffer && fs.existsSync(jsonlFile)) {
+            const jSt = fs.statSync(jsonlFile);
+            if (jSt.size < cleanJsonlBuffer.length * 0.5) needsJsonlHeal = true;
+          }
+          if (needsDashboardHeal || needsJsonlHeal) {
             healing = true;
-            if (cleanBuffer) fs.writeFileSync(dashboardFile, cleanBuffer);
-            const rebuilt = collectAndBuild();
-            cleanBuffer = fs.readFileSync(rebuilt.boardFile);
+            if (cleanBuffer && needsDashboardHeal) atomicWriteFileSync(dashboardFile, cleanBuffer);
+            if (cleanJsonlBuffer && needsJsonlHeal) atomicWriteFileSync(jsonlFile, cleanJsonlBuffer);
+            // Debounce full rebuilds to at most once every 20 seconds so concurrent Maestro agents never thrash disk
+            if (Date.now() - lastRebuildMs > 20000) {
+              lastRebuildMs = Date.now();
+              const rebuilt = collectAndBuild();
+              cleanBuffer = fs.readFileSync(rebuilt.boardFile);
+              if (fs.existsSync(snapshotFile)) cleanJsonlBuffer = fs.readFileSync(snapshotFile);
+            }
             healing = false;
-          } else {
-            cleanBuffer = fs.readFileSync(dashboardFile);
+          } else if (filename === 'dashboard.html' && fs.existsSync(dashboardFile)) {
+            const st = fs.statSync(dashboardFile);
+            if (!cleanBuffer || st.size >= cleanBuffer.length * 0.9) {
+              cleanBuffer = fs.readFileSync(dashboardFile);
+            }
           }
         } catch {
           healing = false;

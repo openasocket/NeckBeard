@@ -555,7 +555,7 @@ export function renderDashboardHtml(
   const payload = JSON.stringify({ records, workspacesMeta, generatedAtMs }).replace(/</g, '\\u003c')
   const crestImg = logoDataUri
     ? `<img src="${logoDataUri}" alt="NeckBeard Principal Engineer">`
-    : `<span class="trackpoint"></span>`
+    : ''
 
   return `<!doctype html>
 <html lang="en">

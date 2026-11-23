@@ -555,4 +555,95 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
     null,
     'PreToolUse guard allows clean .propellerhead.json'
   );
+
+  // Verify Option A (Smart Singleton vs. Multi-Peer Ensemble Coexistence) & multi-harness TOML/JSON coexistence sync
+  const { detectCrewEnsemble, formatEnsembleRules } = require('../hooks/lib');
+
+  // 1. Singleton mode (isolated fake HOME, or CREW_SOLO_PERSONA=neckbeard)
+  const soloHome = tmpState();
+  const soloWs = tmpState();
+  fs.writeFileSync(path.join(soloWs, '.rainmaker.json'), JSON.stringify({ shared: true, activeOutcome: 'Ship solo outcome' }));
+  const soloInfo = detectCrewEnsemble('neckbeard', soloWs, { HOME: soloHome, CREW_SOLO_PERSONA: 'neckbeard' });
+  assert.strictEqual(soloInfo.isEnsemble, false);
+  assert.strictEqual(soloInfo.isEnsembleLeader, true);
+  assert.deepStrictEqual(soloInfo.installedPeers, ['neckbeard']);
+  const soloSessionCtx = run('session-start.js', { session_id: 'SOLO-1', source: 'startup', cwd: soloWs }, {
+    NECKBEARD_STATE_DIR: tmpState(),
+    HOME: soloHome,
+    CREW_SOLO_PERSONA: 'neckbeard',
+  }).hookSpecificOutput.additionalContext;
+  assert.ok(soloSessionCtx.includes('End every reply with the load assumed'), 'Singleton keeps exact solo footer mandate');
+  assert.ok(!soloSessionCtx.includes('[5-Character Crew Ensemble Active'), 'Singleton omits ensemble banner');
+  assert.ok(soloSessionCtx.includes('Crew Peers [active]'), 'Singleton emits Crew Peers when solo/leader');
+
+  // 2. Non-leader Ensemble mode (rainmaker + neckbeard both installed -> rainmaker leads pipeline order)
+  const ensHome = tmpState();
+  fs.mkdirSync(path.join(ensHome, '.claude', 'plugins', 'marketplaces', 'rainmaker'), { recursive: true });
+  fs.mkdirSync(path.join(ensHome, '.claude', 'plugins', 'marketplaces', 'neckbeard'), { recursive: true });
+  const ensInfo = detectCrewEnsemble('neckbeard', soloWs, { HOME: ensHome });
+  assert.strictEqual(ensInfo.isEnsemble, true);
+  assert.strictEqual(ensInfo.isEnsembleLeader, false);
+  assert.strictEqual(ensInfo.leaderId, 'rainmaker');
+  const ensSubCtx = run('subagent-start.js', { session_id: 'ENS-SUB', cwd: soloWs }, {
+    NECKBEARD_STATE_DIR: tmpState(),
+    HOME: ensHome,
+  }).hookSpecificOutput.additionalContext;
+  assert.ok(
+    ensSubCtx.includes('When acting as the lead specialist for this domain (or when invoked directly via its slash command / subagent), end your reply with the load assumed'),
+    'Ensemble adapts footer mandate in SubagentStart'
+  );
+  assert.ok(!ensSubCtx.includes('End every reply with the load assumed'), 'Ensemble removes unconditional footer demand');
+  assert.ok(!ensSubCtx.includes('Crew Peers [active]'), 'Non-leader suppresses duplicate Crew Peers line');
+
+  // 3. Leader Ensemble mode (neckbeard + hipster -> neckbeard leads pipeline order)
+  const leadHome = tmpState();
+  const leadWs = tmpState();
+  fs.mkdirSync(path.join(leadHome, '.claude', 'plugins', 'marketplaces', 'neckbeard'), { recursive: true });
+  fs.mkdirSync(path.join(leadHome, '.codex', 'plugins', 'cache', 'hipster'), { recursive: true });
+  fs.writeFileSync(path.join(leadWs, '.hipster.json'), JSON.stringify({ shared: true, activeFlow: 'Verify live DOM' }));
+  const leadInfo = detectCrewEnsemble('neckbeard', leadWs, { HOME: leadHome });
+  assert.strictEqual(leadInfo.isEnsemble, true);
+  assert.strictEqual(leadInfo.isEnsembleLeader, true);
+  assert.strictEqual(leadInfo.leaderId, 'neckbeard');
+  const leadSessCtx = run('session-start.js', { session_id: 'ENS-LEAD', source: 'startup', cwd: leadWs }, {
+    NECKBEARD_STATE_DIR: tmpState(),
+    HOME: leadHome,
+  }).hookSpecificOutput.additionalContext;
+  assert.ok(leadSessCtx.includes('[5-Character Crew Ensemble Active: neckbeard -> hipster]'), 'Leader emits ensemble header');
+  assert.ok(leadSessCtx.includes('Crew Peers [active]'), 'Leader emits Crew Peers summary once');
+
+  // 4. Multi-harness installer coexistence & mergeGrokEnabledPluginsToml
+  const multiLineGrok = '[cli]\nauto = true\n\n[plugins]\nenabled = [\n    "propellerhead",\n]\n\n[ui]\nyolo = false\n';
+  const mergedGrok = installer.mergeGrokEnabledPluginsToml(multiLineGrok, 'neckbeard');
+  assert.ok(mergedGrok.includes('enabled = ["propellerhead", "neckbeard"]'));
+  assert.ok(!mergedGrok.includes('\n]\n'), 'Removes multi-line array remainder cleanly');
+  const dupGrok = '[plugins]\nenabled = ["rainmaker"]\nenabled = ["hipster"]\n';
+  assert.strictEqual(
+    installer.mergeGrokEnabledPluginsToml(dupGrok, 'neckbeard'),
+    '[plugins]\nenabled = ["rainmaker", "hipster", "neckbeard"]\n'
+  );
+
+  const coexHome = tmpState();
+  fs.mkdirSync(path.join(coexHome, '.claude', 'plugins'), { recursive: true });
+  fs.writeFileSync(path.join(coexHome, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: {} }));
+  fs.mkdirSync(path.join(coexHome, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(coexHome, '.codex', 'config.toml'), '[plugins."ponytail@ponytail"]\nenabled = true\n');
+  fs.mkdirSync(path.join(coexHome, '.grok', 'installed-plugins'), { recursive: true });
+  fs.writeFileSync(path.join(coexHome, '.grok', 'config.toml'), multiLineGrok);
+  installer.syncAllHarnesses({
+    autoPull: false,
+    skipDashboard: true,
+    env: { HOME: coexHome, USERPROFILE: coexHome, PATH: '', XDG_CONFIG_HOME: tmpState() },
+  });
+  const knownMp = JSON.parse(fs.readFileSync(path.join(coexHome, '.claude', 'plugins', 'known_marketplaces.json'), 'utf8'));
+  assert.strictEqual(knownMp.neckbeard.source.repo, 'openasocket/NeckBeard');
+  const claudeSettings = JSON.parse(fs.readFileSync(path.join(coexHome, '.claude', 'settings.json'), 'utf8'));
+  assert.strictEqual(claudeSettings.extraKnownMarketplaces.neckbeard.source.repo, 'openasocket/NeckBeard');
+  const codexToml = fs.readFileSync(path.join(coexHome, '.codex', 'config.toml'), 'utf8');
+  assert.ok(codexToml.includes('[marketplaces.neckbeard]') && codexToml.includes('[plugins."neckbeard@neckbeard"]'));
+  assert.ok(codexToml.includes('enabled = true') && codexToml.includes('enabled = false'));
+  const grokToml = fs.readFileSync(path.join(coexHome, '.grok', 'config.toml'), 'utf8');
+  assert.ok(grokToml.includes('enabled = ["propellerhead", "neckbeard"]'));
+  const grokReg = JSON.parse(fs.readFileSync(path.join(coexHome, '.grok', 'installed-plugins', 'registry.json'), 'utf8'));
+  assert.ok(grokReg.repos['neckbeard-local'] && grokReg.repos['neckbeard-local'].plugins.neckbeard);
 });

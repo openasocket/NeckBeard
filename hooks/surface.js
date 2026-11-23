@@ -673,7 +673,7 @@ function ensureFreshBoundaryMap(root = process.cwd(), env = process.env, maxAgeM
 }
 
 // Formats the concise, token-efficient load + per-boundary overrides + external/internal map + boundary drift alert.
-function formatProjectContext(root = process.cwd(), env = process.env) {
+function formatProjectContext(root = process.cwd(), env = process.env, opts = {}) {
   const cfg = readProjectConfig(root, env);
   const liveMap = buildBoundaryMap(root);
   const hasSavedBounds = Boolean(cfg && cfg.boundaries && flattenBoundaries(cfg.boundaries).length > 0);
@@ -717,8 +717,10 @@ function formatProjectContext(root = process.cwd(), env = process.env) {
       lines.push(`Boundary Drift [new]: +${drift.added.length} unreviewed (${drift.added.slice(0, 3).join(', ')}) — verify in /neckbeard-review or run /neckbeard map`);
     }
   }
-  const crewLines = formatCrewContext(root);
-  if (crewLines) lines.push(crewLines);
+  if (opts.includeCrewContext !== false) {
+    const crewLines = formatCrewContext(root);
+    if (crewLines) lines.push(crewLines);
+  }
   return lines.join('\n').slice(0, MAP_BUDGET);
 }
 

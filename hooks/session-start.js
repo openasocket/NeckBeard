@@ -5,7 +5,7 @@
 
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { readInput, readLevel, writeLevel, emitContext, rules } = require('./lib');
+const { readInput, readLevel, writeLevel, emitContext, rules, detectCrewEnsemble, formatEnsembleRules } = require('./lib');
 const { ensureFreshBoundaryMap, formatProjectContext } = require('./surface');
 const { hasVibes, formatVibesContext } = require('./vibes');
 
@@ -16,13 +16,14 @@ const { hasVibes, formatVibesContext } = require('./vibes');
   if (level === 'off') return;
 
   const cwd = input.cwd || process.cwd();
-  let text = rules(level);
+  const ensembleInfo = detectCrewEnsemble('neckbeard', cwd, process.env);
+  let text = formatEnsembleRules(rules(level), ensembleInfo);
 
   // Auto-refresh persisted boundary map if empty, referencing deleted files, or older than 24h,
   // and always inject the concise internal/external trust-boundary map (<150 tokens).
   try {
     ensureFreshBoundaryMap(cwd);
-    const ctx = formatProjectContext(cwd);
+    const ctx = formatProjectContext(cwd, process.env, { includeCrewContext: ensembleInfo.isEnsembleLeader });
     if (ctx) text += '\n\n' + ctx;
   } catch { /* best-effort */ }
 

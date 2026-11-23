@@ -29,6 +29,7 @@ const SYNC_ITEMS = [
   '.grok-plugin',
   '.opencode',
   'pi-extension',
+  'agents',
   'skills',
   'hooks',
   'assets',
@@ -156,12 +157,23 @@ function syncClaudeCode(binPath, home, version, commitSha, opts) {
       }
     }
 
+    const nowIso = new Date().toISOString();
+    const knownMpFile = path.join(pluginsRoot, 'known_marketplaces.json');
+    try {
+      const known = fs.existsSync(knownMpFile) ? JSON.parse(fs.readFileSync(knownMpFile, 'utf8')) : {};
+      known.neckbeard = {
+        source: { source: 'github', repo: REPO_SLUG },
+        installLocation: mpDir,
+        lastUpdated: nowIso,
+      };
+      fs.writeFileSync(knownMpFile, JSON.stringify(known, null, 2) + '\n');
+    } catch {}
+
     const installedFile = path.join(pluginsRoot, 'installed_plugins.json');
     if (fs.existsSync(installedFile)) {
       try {
         const data = JSON.parse(fs.readFileSync(installedFile, 'utf8'));
         data.plugins = data.plugins || {};
-        const nowIso = new Date().toISOString();
         const prevEntry = Array.isArray(data.plugins['neckbeard@neckbeard']) && data.plugins['neckbeard@neckbeard'][0];
         data.plugins['neckbeard@neckbeard'] = [
           {
@@ -186,6 +198,10 @@ function syncClaudeCode(binPath, home, version, commitSha, opts) {
         const s = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
         s.enabledPlugins = s.enabledPlugins || {};
         s.enabledPlugins['neckbeard@neckbeard'] = true;
+        s.extraKnownMarketplaces = s.extraKnownMarketplaces || {};
+        s.extraKnownMarketplaces.neckbeard = {
+          source: { source: 'github', repo: REPO_SLUG },
+        };
         if (opts.removePonytail && 'ponytail@ponytail' in s.enabledPlugins) {
           s.enabledPlugins['ponytail@ponytail'] = false;
         }
@@ -227,17 +243,112 @@ function syncCodex(binPath, home, version, opts) {
     actions.push(`cache synced -> v${version}`);
 
     const configToml = path.join(codexRoot, 'config.toml');
-    if (opts.removePonytail && fs.existsSync(configToml)) {
+    if (fs.existsSync(configToml)) {
       try {
         let toml = fs.readFileSync(configToml, 'utf8');
-        toml = toml.replace(/(\[plugins\."ponytail@ponytail"\]\s*\n\s*enabled\s*=\s*)true/g, '$1false');
-        fs.writeFileSync(configToml, toml);
-        actions.push('disabled ponytail@ponytail collision');
+        let changed = false;
+        if (opts.removePonytail) {
+          const next = toml.replace(/(\[plugins\."ponytail@ponytail"\]\s*\n\s*enabled\s*=\s*)true/g, '$1false');
+          if (next !== toml) {
+            toml = next;
+            actions.push('disabled ponytail@ponytail collision');
+            changed = true;
+          }
+        }
+        if (!toml.includes('[marketplaces.neckbeard]')) {
+          toml = toml.trimEnd() + `\n\n[marketplaces.neckbeard]\nsource_type = "git"\nsource = "${REPO_URL}.git"\n`;
+          changed = true;
+        }
+        if (!toml.includes('[plugins."neckbeard@neckbeard"]')) {
+          toml = toml.trimEnd() + '\n\n[plugins."neckbeard@neckbeard"]\nenabled = true\n';
+          changed = true;
+        } else {
+          const next = toml.replace(/(\[plugins\."neckbeard@neckbeard"\]\s*\n\s*enabled\s*=\s*)false/g, '$1true');
+          if (next !== toml) {
+            toml = next;
+            changed = true;
+          }
+        }
+        if (changed) fs.writeFileSync(configToml, toml);
       } catch {}
     }
   }
 
   return { harness: 'OpenAI Codex', detected: true, binary: binPath || codexRoot, action: actions.join(' · ') || `updated to v${version}` };
+}
+
+// Safely merges a plugin ID into the single `[plugins]` `enabled = [...]` array in Grok's config.toml,
+// supporting both single-line and multi-line arrays and collapsing any duplicate `enabled = [...]` blocks.
+function mergeGrokEnabledPluginsToml(tomlContent, pluginId) {
+  const text = String(tomlContent || '');
+  if (!/^\[plugins\]\s*$/m.test(text)) {
+    return text.trimEnd() + `\n\n[plugins]\nenabled = ["${pluginId}"]\n`;
+  }
+
+  const lines = text.split('\n');
+  const collected = new Set();
+
+  let scanInPlugins = false;
+  let inArray = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!inArray && /^\[.+\]$/.test(trimmed)) {
+      scanInPlugins = trimmed === '[plugins]';
+      continue;
+    }
+    if (scanInPlugins && (inArray || /^enabled\s*=\s*\[/.test(trimmed))) {
+      const matches = trimmed.match(/"([^"]+)"|'([^']+)'/g) || [];
+      for (const m of matches) {
+        const clean = m.slice(1, -1).trim();
+        if (clean) collected.add(clean);
+      }
+      if (/^enabled\s*=\s*\[/.test(trimmed) && !trimmed.includes(']')) {
+        inArray = true;
+      } else if (inArray && trimmed.includes(']')) {
+        inArray = false;
+      }
+    }
+  }
+
+  collected.add(pluginId);
+  const formattedArray = `enabled = [${[...collected].map((p) => `"${p}"`).join(', ')}]`;
+
+  const out = [];
+  let inPlugins = false;
+  let skippingArray = false;
+  let insertedEnabledLine = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (skippingArray) {
+      if (trimmed.includes(']')) skippingArray = false;
+      continue;
+    }
+    if (/^\[.+\]$/.test(trimmed)) {
+      if (inPlugins && !insertedEnabledLine) {
+        out.push(formattedArray);
+        insertedEnabledLine = true;
+      }
+      inPlugins = trimmed === '[plugins]';
+      out.push(line);
+      continue;
+    }
+    if (inPlugins && /^enabled\s*=\s*\[/.test(trimmed)) {
+      if (!insertedEnabledLine) {
+        out.push(formattedArray);
+        insertedEnabledLine = true;
+      }
+      if (!trimmed.includes(']')) {
+        skippingArray = true;
+      }
+      continue;
+    }
+    out.push(line);
+  }
+  if (inPlugins && !insertedEnabledLine) {
+    out.push(formattedArray);
+  }
+  return out.join('\n');
 }
 
 function syncGrok(binPath, home, version, commitSha, opts) {
@@ -254,26 +365,32 @@ function syncGrok(binPath, home, version, commitSha, opts) {
   }
 
   const installedDir = path.join(grokRoot, 'installed-plugins');
-  if (fs.existsSync(installedDir)) {
+  if (fs.existsSync(installedDir) || hasDir) {
+    fs.mkdirSync(installedDir, { recursive: true });
     const entries = fs.readdirSync(installedDir).filter((e) => e.startsWith('neckbeard'));
     const targetFolder = entries[0] || 'neckbeard-local';
     const targetPath = path.join(installedDir, targetFolder);
     copyTreeFiltered(ROOT, targetPath);
 
     const regFile = path.join(installedDir, 'registry.json');
-    if (fs.existsSync(regFile)) {
-      try {
-        const reg = JSON.parse(fs.readFileSync(regFile, 'utf8'));
-        reg.repos = reg.repos || {};
-        if (reg.repos[targetFolder]) {
-          reg.repos[targetFolder].updated_at = new Date().toISOString();
-          if (commitSha && reg.repos[targetFolder].kind) {
-            reg.repos[targetFolder].kind.commit = commitSha;
-          }
-        }
-        fs.writeFileSync(regFile, JSON.stringify(reg, null, 2) + '\n');
-      } catch {}
-    }
+    try {
+      const reg = fs.existsSync(regFile) ? JSON.parse(fs.readFileSync(regFile, 'utf8')) : { version: 1, repos: {} };
+      reg.repos = reg.repos || {};
+      const nowIso = new Date().toISOString();
+      const existing = reg.repos[targetFolder];
+      reg.repos[targetFolder] = {
+        kind: {
+          type: 'Git',
+          url: REPO_URL,
+          commit: commitSha || (existing && existing.kind && existing.kind.commit) || 'HEAD',
+        },
+        installed_at: (existing && existing.installed_at) || nowIso,
+        updated_at: nowIso,
+        path: targetPath,
+        plugins: { neckbeard: {} },
+      };
+      fs.writeFileSync(regFile, JSON.stringify(reg, null, 2) + '\n');
+    } catch {}
     actions.push(`synced ${targetFolder} -> v${version}`);
   }
 
@@ -281,10 +398,8 @@ function syncGrok(binPath, home, version, commitSha, opts) {
   if (fs.existsSync(cfgFile)) {
     try {
       const cfg = fs.readFileSync(cfgFile, 'utf8');
-      if (!cfg.includes('"neckbeard"')) {
-        const updated = cfg.includes('[plugins]')
-          ? cfg.replace(/\[plugins\]\s*\n/, '[plugins]\nenabled = ["neckbeard"]\n')
-          : cfg + '\n[plugins]\nenabled = ["neckbeard"]\n';
+      const updated = mergeGrokEnabledPluginsToml(cfg, 'neckbeard');
+      if (updated !== cfg) {
         fs.writeFileSync(cfgFile, updated);
         actions.push('enabled in config.toml');
       }
@@ -412,7 +527,7 @@ function syncAllHarnesses(options = {}) {
   ];
 
   let dashboardFile = '';
-  if (!dryRun) {
+  if (!dryRun && !options.skipDashboard) {
     try {
       const bandImport = require('../hooks/band-import');
       const built = bandImport.run(ROOT, env);
@@ -464,6 +579,7 @@ if (require.main === module) {
 
 module.exports = {
   findBinaryOnPath,
+  mergeGrokEnabledPluginsToml,
   syncAllHarnesses,
   formatSyncReport,
 };

@@ -253,6 +253,23 @@ NeckBeard is the **preventive engineering layer**; the **[VIBES Protocol](https:
 
 ---
 
+## 5-Character Crew Universe Interoperability
+
+NeckBeard (**`Ashy Larry` / `Ashy Lari`**) works standalone or as the Principal Systems Engineer inside the **5-Character Agent Crew**—five independent, loosely coupled 8-harness agent frameworks that interoperate via single-owner repo-local JSON stores, a shared PM-gatekept intake queue (`.rainmaker-inbox.jsonl`), and deterministic wire handoff envelopes ([`docs/crew-protocol.md`](docs/crew-protocol.md)):
+
+| Project | Character (Masculine $\leftrightarrow$ Feminine) | Role & 3 Gates | CLI / Subagent | Single-Owner Store |
+|---|---|---|---|---|
+| 🎯 **`RainMaker`** | **`Value Val`** (*Valentino $\leftrightarrow$ Valentina*) | Product, Market Analysis, Scope Cutline & Value Gatekeeper (`Valuable · Cut-to-Bone · Measured`) | `/rainmaker` · `/val` · `@rainmaker` | `.rainmaker.json` + `.rainmaker-inbox.jsonl` *(shared intake)* |
+| 🧢 **`PropellerHead`** | **`Decomp Danny`** (*Danny $\leftrightarrow$ Dani*) | Forward Feature/System DAG Decomposition, Pre-Mortems & Reverse IR / Post-Mortems (`Atomic · Root-Proven · Immunized`) | `/propellerhead` · `/danny` · `/decomp` · `@propellerhead` | `.propellerhead.json` |
+| 🧔 **`NeckBeard`** | **`Ashy Larry`** (*Larry $\leftrightarrow$ Lari*) | Principal Systems, Security & Scale Engineer (`Safe · Fast@Load · Done`) | `/neckbeard` · `/larry` · `/lari` · `@neckbeard` | [`.neckbeard.json`](.neckbeard.json) |
+| 🎨 **`Hipster`** | **`Slick Sammy`** (*Samuel $\leftrightarrow$ Samantha*) | UX/DX Craft, Visual Hierarchy, CLI Ergonomics & Live-Glass E2E Verifier (`Obvious · Polished · Live-Verified`) | `/hipster` · `/sammy` · `@hipster` | `.hipster.json` |
+| 🧨 **`EdgeLord`** | **`Ruckus Ronnie`** (*Ruckus Ron $\leftrightarrow$ Ronica*) | Adversarial Red-Team, Hostile Fuzzing, Concurrency Chaos & Boundary Breaker (`Broken-or-Bulletproof · No-Happy-Path-Mocks · Logged-to-Inbox`) | `/edgelord` · `/ruckus` · `@edgelord` | `.edgelord.json` |
+
+- **Automatic Peer-Store Context & Censorship Guard:** When `.rainmaker.json`, `.propellerhead.json`, `.hipster.json`, or `.edgelord.json` exist in a workspace, [`hooks/surface.js`](hooks/surface.js) automatically injects a sanitized `Crew Peers [active]` summary at `SessionStart` and `SubagentStart` (or on `/neckbeard crew` / `/larry crew`), and [`hooks/guard.js`](hooks/guard.js) enforces the same secret/URL/path censorship across all Crew stores.
+- **Shared Intake Queue (`.rainmaker-inbox.jsonl`) & Wire Envelopes:** Out-of-scope audit findings, boundary drift, and expired `risk:` debt can be appended via `appendCrewInboxProposal` in [`hooks/surface.js`](hooks/surface.js) to `.rainmaker-inbox.jsonl` for **Value Val (`RainMaker`)** to triage. When invoked as a subagent ([`agents/neckbeard.md`](agents/neckbeard.md) or [`agents/neckbeard-reviewer.md`](agents/neckbeard-reviewer.md)) or in **Claude Agent Teams**, NeckBeard emits the canonical `[NECKBEARD-DONE id=<task-id>]` and `[NECKBEARD-REVIEW id=<task-id>]` handoff envelopes defined in **[`docs/crew-protocol.md`](docs/crew-protocol.md)**.
+
+---
+
 ## How it differs from Ponytail (our minimalist inspiration)
 
 | Dimension | Ponytail (Inspiration) | NeckBeard |

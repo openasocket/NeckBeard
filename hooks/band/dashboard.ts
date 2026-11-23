@@ -1197,7 +1197,7 @@ export function renderDashboardHtml(
     var annRows = el('vibes-annotations-rows');
     if (annRows) {
       annRows.textContent = '';
-      (v.recentAnnotations || []).slice(0, 12).forEach(function(a) {
+      (v.recentAnnotations || []).slice(0, 60).forEach(function(a) {
         var tr = document.createElement('tr');
         var riskTxt = a.riskScore != null ? a.riskScore.toFixed(2) : '0.00';
         var fullTxt = a.fullText || a.summary || 'Annotated turn';

@@ -598,14 +598,15 @@ function readVibesTelemetry(root = process.cwd()) {
     }
   }
 
-  // Prefer non-environment manifest entries (reasoning/command/prompt) first, then environment/session rows if needed
+  // Prefer non-environment manifest entries (reasoning/command/prompt) first, then session rows from annotations.jsonl, then environment rows
   if (recentAnnotations.length === 0 && manifestInspectorRows.length > 0) {
     const substantive = manifestInspectorRows.filter((r) => !String(r.file || '').startsWith('[env:'));
-    const chosen = substantive.length > 0 ? substantive : manifestInspectorRows;
-    recentAnnotations.push(...chosen.slice(-16));
+    if (substantive.length > 0) recentAnnotations.push(...substantive.slice(-40));
   }
   if (recentAnnotations.length === 0 && annotations.length > 0) {
-    for (const a of annotations.slice(-12)) {
+    const startOrAll = annotations.filter((a) => a.event !== 'end');
+    const sourceList = startOrAll.length > 0 ? startOrAll : annotations;
+    for (const a of sourceList.slice(-40)) {
       const sid = a.session_id || a.sessionId || 'session';
       const resolvedEnvModel = (a.environment_hash && envModels.get(a.environment_hash)) || '';
       recentAnnotations.push({
@@ -618,8 +619,12 @@ function readVibesTelemetry(root = process.cwd()) {
         riskScore: null,
         verified: String(a.assurance_level || configuredAssurance) === 'high',
         summary: String(a.description || `${a.event || 'session'} (${a.assurance_level || configuredAssurance || 'high'} assurance)`),
+        fullText: String(a.prompt || a.description || ''),
       });
     }
+  }
+  if (recentAnnotations.length === 0 && manifestInspectorRows.length > 0) {
+    recentAnnotations.push(...manifestInspectorRows.slice(-16));
   }
 
   const blobsDirCount = countDirEntriesSafe(path.join(dir, 'blobs'));
@@ -701,7 +706,7 @@ function readVibesTelemetry(root = process.cwd()) {
     fileHotspots,
     decisionRecords,
     incidentRecords,
-    recentAnnotations: recentAnnotations.slice(-16).reverse(),
+    recentAnnotations: recentAnnotations.slice(-60).reverse(),
     sessions: [...sessions.values()]
       .sort((a, b) => (b.startedMs || 0) - (a.startedMs || 0))
       .slice(0, 250)

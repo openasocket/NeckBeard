@@ -1502,52 +1502,7 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
       : (canScanBounds ? buildArchitectureMap(wsPath, 16, 24) : null);
     const wsDrift = isCurrent ? detectBoundaryDrift(wsPath, env) : { added: [] };
     const rawVibes = wsHasVibes ? readVibesTelemetry(wsPath) : null;
-    let compactVibes = rawVibes ? { ...rawVibes, sessions: undefined } : null;
-    if (compactVibes) {
-      const wsTranscripts = allRecords
-        .filter((r) => r && r.projectName === projName)
-        .sort((a, b) => (b.startedAtMs || 0) - (a.startedAtMs || 0));
-      const byPrefix = new Map();
-      for (const tr of wsTranscripts) {
-        if (tr.sessionId) byPrefix.set(String(tr.sessionId).slice(0, 14), tr);
-      }
-      const existingAnns = Array.isArray(compactVibes.recentAnnotations) ? compactVibes.recentAnnotations : [];
-      const seenPrefixes = new Set();
-      const enrichedAnns = existingAnns.map((ann) => {
-        const pref = String(ann.sessionId || '').slice(0, 14);
-        if (pref) seenPrefixes.add(pref);
-        const match = pref && byPrefix.get(pref);
-        if (!match) return ann;
-        const fullP = match.fullPrompt || match.taskTitle || '';
-        const outS = match.assistantSummary ? `\n\nASSISTANT OUTCOME:\n${match.assistantSummary}` : '';
-        return {
-          ...ann,
-          summary: (!ann.summary || /agent session|Annotated agent turn/i.test(ann.summary)) && match.taskTitle ? match.taskTitle : ann.summary,
-          fullText: ann.fullText && ann.fullText.length > 40 ? ann.fullText : `${fullP}${outS}`,
-        };
-      });
-      for (const tr of wsTranscripts.slice(0, 45)) {
-        const pref = String(tr.sessionId || tr.recordId || '').slice(0, 14);
-        if (pref && seenPrefixes.has(pref)) continue;
-        if (pref) seenPrefixes.add(pref);
-        const fullP = tr.fullPrompt || tr.taskTitle || 'Session';
-        const outS = tr.assistantSummary ? `\n\nASSISTANT OUTCOME:\n${tr.assistantSummary}` : '';
-        enrichedAnns.push({
-          sessionId: pref || 'session',
-          timestamp: tr.timestampIso || '',
-          model: tr.modelId || 'claude',
-          file: '[transcript (un-attested)]',
-          linesAdded: tr.linesInserted || 0,
-          linesRemoved: tr.linesDeleted || 0,
-          riskScore: tr.vibesMaxPrismRisk != null ? tr.vibesMaxPrismRisk : 0,
-          verified: false,
-          summary: tr.taskTitle || 'Session transcript',
-          fullText: `PROMPT:\n${fullP}${outS}`,
-        });
-        if (enrichedAnns.length >= 60) break;
-      }
-      compactVibes.recentAnnotations = enrichedAnns.slice(0, 60);
-    }
+    const compactVibes = rawVibes ? { ...rawVibes, sessions: undefined } : null;
     workspacesMeta[projName] = {
       load: (wsCfg && wsCfg.load) || '',
       boundaryLoad: (wsCfg && wsCfg.boundaryLoad) || {},

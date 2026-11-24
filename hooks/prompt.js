@@ -11,12 +11,15 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { readInput, readLevel, writeLevel, normalizeLevel, claudeDir, emitContext, rules } = require('./lib');
 const { buildBoundaryMap, buildArchitectureMap, readProjectConfig, writeProjectConfig, formatProjectContext, formatCrewContext } = require('./surface');
+const { runMemoryCommand } = require('./memory');
 
 function parseCommand(prompt) {
   const raw = String(prompt || '').trim();
   const p = raw.toLowerCase();
   if (/^(stop neckbeard|neckbeard off|normal mode)\b/.test(p)) return 'off';
   if (/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)-map(?:\s|$)/i.test(raw)) return { action: 'map' };
+  const memSlash = raw.match(/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)-memory(?:\s+([\s\S]+))?$/i);
+  if (memSlash) return { action: 'memory', value: (memSlash[1] || '').trim() };
   const m = raw.match(/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)(?:\s+([\s\S]+))?$/i);
   if (!m) return null;
   if (!m[1]) return 'on';
@@ -29,6 +32,7 @@ function parseCommand(prompt) {
     if (lvl) return lvl;
     if (sub === 'map') return { action: 'map' };
     if (sub === 'crew') return { action: 'crew' };
+    if (sub === 'memory') return { action: 'memory', value: 'inspect' };
     if (sub === 'load') return { action: 'load', value: '' };
     if (sub === 'share') return { action: 'share', value: '' };
     if (sub === 'band') return { action: 'band', value: 'toggle' };
@@ -38,6 +42,7 @@ function parseCommand(prompt) {
   if (sub === 'load') return { action: 'load', value: rest.slice(4).trim() };
   if (sub === 'map') return { action: 'map' };
   if (sub === 'crew') return { action: 'crew' };
+  if (sub === 'memory') return { action: 'memory', value: rest.slice(6).trim() };
   if (sub === 'share') {
     const mode = tokens[1].toLowerCase();
     return mode === 'on' || mode === 'off' ? { action: 'share', value: mode } : 'unknown';
@@ -85,6 +90,15 @@ function handleSubcommand(cmd, cwd) {
   if (cmd.action === 'crew') {
     const crewSummary = formatCrewContext(cwd) || 'No sibling Crew Universe stores (.headhoncho.json, .rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json, etc.) initialized in this workspace yet.';
     return `NECKBEARD (Ashy Larry / Ashy Lari) Crew Universe Status:\n${crewSummary}\n\n${formatProjectContext(cwd)}`;
+  }
+
+  if (cmd.action === 'memory') {
+    const argv = String(cmd.value || 'inspect').trim().split(/\s+/).filter(Boolean);
+    try {
+      return runMemoryCommand(argv, process.env);
+    } catch (err) {
+      return `NECKBEARD memory error: ${err.message}`;
+    }
   }
 
   if (cmd.action === 'share') {

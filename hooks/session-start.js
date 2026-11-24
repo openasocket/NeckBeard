@@ -8,6 +8,7 @@ const { execFileSync } = require('child_process');
 const { readInput, readLevel, writeLevel, emitContext, rules, detectCrewEnsemble, formatEnsembleRules } = require('./lib');
 const { ensureFreshBoundaryMap, formatProjectContext } = require('./surface');
 const { hasVibes, formatVibesContext } = require('./vibes');
+const { formatCompactMemoryDigest } = require('./memory');
 
 (async () => {
   const input = await readInput();
@@ -33,6 +34,12 @@ const { hasVibes, formatVibesContext } = require('./vibes');
       const vibes = formatVibesContext(cwd);
       if (vibes) text += '\n\n' + vibes;
     }
+  } catch { /* best-effort */ }
+
+  // Append compact <= 800-token 3-Tier Memory digest ONLY when memory entries exist.
+  try {
+    const memDigest = formatCompactMemoryDigest({}, process.env);
+    if (memDigest) text += '\n\n' + memDigest;
   } catch { /* best-effort */ }
 
   if (process.env.NECKBEARD_SURFACE === '1') {

@@ -114,11 +114,14 @@ test('VIBES .ai-audit provenance protection blocks immutable artifacts and allow
   assert.match(check('Bash', { command: 'echo "{}" > .ai-audit/annotations.jsonl' }, 'full'), /VIBES/);
   assert.match(check('Bash', { command: "sed -i '' 's/a/b/' .ai-audit/manifest.json" }, 'full'), /VIBES/);
 
-  // Operator-configurable rules/policy and read-only queries / official CLIs are allowed
-  assert.strictEqual(check('Write', { file_path: '.ai-audit/iocs.d/custom.yaml', content: 'id: CUSTOM-1' }, 'paranoid'), null);
-  assert.strictEqual(check('Edit', { file_path: '.ai-audit/extensions/rule.json', new_string: '{}' }, 'paranoid'), null);
-  assert.strictEqual(check('Edit', { file_path: '.ai-audit/config.json', new_string: '{"standard":"VIBES"}' }, 'paranoid'), null);
-  assert.strictEqual(check('Write', { file_path: '.ai-audit/.gitignore', content: 'audit.db\n' }, 'paranoid'), null);
+  // ALL paths under .ai-audit/** are strictly read-only for agents (aiU vector closed);
+  // read-only queries and official VIBES CLIs remain allowed.
+  assert.match(check('Write', { file_path: '.ai-audit/iocs.d/custom.yaml', content: 'id: CUSTOM-1' }, 'full'), /VIBES/);
+  assert.match(check('Edit', { file_path: '.ai-audit/extensions/rule.json', new_string: '{}' }, 'full'), /VIBES/);
+  assert.match(check('Edit', { file_path: '.ai-audit/config.json', new_string: '{"standard":"VIBES"}' }, 'full'), /VIBES/);
+  assert.match(check('Write', { file_path: '.ai-audit/.gitignore', content: 'audit.db\n' }, 'full'), /VIBES/);
+  assert.match(check('Write', { file_path: '.ai-audit/unlisted-file.txt', content: 'tamper' }, 'full'), /VIBES/);
+  assert.match(check('Bash', { command: 'echo "x" > .ai-audit/config.json' }, 'full'), /VIBES/);
   assert.strictEqual(check('Bash', { command: 'vibecheck validate && vibetrace scan' }, 'paranoid'), null);
   assert.strictEqual(check('Bash', { command: "jq -c 'select(.risk_score >= 0.6)' .ai-audit/annotations.jsonl" }, 'paranoid'), null);
   assert.ok(findVibesTamper('Write', { file_path: '.ai-audit/manifest.json' }));
@@ -575,14 +578,19 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   assert.ok(!inboxRaw.includes('https://internal.corp'), 'appendCrewInboxProposal censors URLs');
   assert.ok(
     check('Write', { file_path: '.rainmaker.json', content: '{"activeOutcome":"Call https://secret.internal.corp"}' }, 'full'),
-    'PreToolUse guard blocks uncensored URL in .rainmaker.json'
+    'PreToolUse guard blocks Write to sibling .rainmaker.json'
+  );
+  assert.match(
+    check('Write', { file_path: '.propellerhead.json', content: '{"shared":true,"persona":"danny","activeInvariant":"Root cause proven"}' }, 'full'),
+    /sibling crew store/,
+    'Single-owner store rule blocks even clean Write to sibling .propellerhead.json'
   );
   assert.strictEqual(
-    check('Write', { file_path: '.propellerhead.json', content: '{"shared":true,"persona":"danny","activeInvariant":"Root cause proven"}' }, 'full'),
+    check('Write', { file_path: '.rainmaker-inbox.jsonl', content: '{"id":"nb-1","from":"neckbeard","summary":"Clean proposal"}\n' }, 'full'),
     null,
-    'PreToolUse guard allows clean .propellerhead.json'
+    'Append-only .rainmaker-inbox.jsonl allows clean sanitized JSONL'
   );
-  // PreToolUse guard covers all 8 new expansion sibling stores on Write, Edit, and MultiEdit
+  // PreToolUse guard hard-blocks ALL 8 expansion sibling stores on Write, Edit, MultiEdit, and Bash
   const expansionStores = [
     '.headhoncho.json',
     '.infrasmith.json',
@@ -595,34 +603,24 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   ];
   for (const storeFile of expansionStores) {
     assert.match(
-      check('Write', { file_path: storeFile, content: '{"note":"leak https://evil.internal.corp"}' }, 'full'),
-      /crew store/,
-      `PreToolUse guard blocks URL in ${storeFile}`
-    );
-    assert.match(
-      check('Write', { file_path: `subdir/${storeFile}`, content: 'not-valid-json' }, 'full'),
-      /invalid JSON/,
-      `PreToolUse guard blocks invalid JSON in ${storeFile}`
-    );
-    assert.match(
-      check('Edit', { file_path: storeFile, new_string: '"endpoint": "10.0.0.42"' }, 'full'),
-      /crew store/,
-      `PreToolUse guard blocks IP address on Edit in ${storeFile}`
-    );
-    assert.match(
-      check('MultiEdit', { file_path: storeFile, edits: [{ new_string: '"ok": true' }, { new_string: '"owner": "ceo@corp.example"' }] }, 'full'),
-      /crew store/,
-      `PreToolUse guard blocks email on MultiEdit in ${storeFile}`
-    );
-    assert.strictEqual(
       check('Write', { file_path: storeFile, content: '{"shared":true,"status":"ok"}' }, 'full'),
-      null,
-      `PreToolUse guard allows clean Write to ${storeFile}`
+      /sibling crew store/,
+      `Single-owner guard blocks Write to sibling ${storeFile}`
     );
-    assert.strictEqual(
-      check('Edit', { file_path: storeFile, new_string: '"status": "armed"' }, 'full'),
-      null,
-      `PreToolUse guard allows clean partial Edit to ${storeFile}`
+    assert.match(
+      check('Edit', { file_path: `subdir/${storeFile}`, new_string: '"status": "armed"' }, 'full'),
+      /sibling crew store/,
+      `Single-owner guard blocks Edit to sibling ${storeFile}`
+    );
+    assert.match(
+      check('MultiEdit', { file_path: storeFile, edits: [{ new_string: '"ok": true' }] }, 'full'),
+      /sibling crew store/,
+      `Single-owner guard blocks MultiEdit to sibling ${storeFile}`
+    );
+    assert.match(
+      check('Bash', { command: `echo '{}' > ${storeFile}` }, 'full'),
+      /sibling crew store/,
+      `Single-owner guard blocks Bash redirect to sibling ${storeFile}`
     );
   }
 
@@ -662,6 +660,7 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
       HOME: homeDir,
       USERPROFILE: homeDir,
       XDG_CONFIG_HOME: path.join(homeDir, '.config'),
+      CREW_CONFIG_DIR: '',
       CLAUDE_CONFIG_DIR: '',
       CODEX_HOME: '',
       COPILOT_HOME: '',
@@ -818,4 +817,291 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   assert.ok(grokToml.includes('enabled = ["propellerhead", "neckbeard"]'));
   const grokReg = JSON.parse(fs.readFileSync(path.join(coexHome, '.grok', 'installed-plugins', 'registry.json'), 'utf8'));
   assert.ok(grokReg.repos['neckbeard-local'] && grokReg.repos['neckbeard-local'].plugins.neckbeard);
+});
+
+test('§4.5 atomic drop-in presence registration in scripts/install-all.js (dry-run vs live)', () => {
+  const installer = require('../scripts/install-all');
+  const crewDir = path.join(tmpState(), 'crew-cfg');
+  const fakeHome = tmpState();
+  const env = { HOME: fakeHome, USERPROFILE: fakeHome, PATH: '', CREW_CONFIG_DIR: crewDir };
+
+  // --dry-run must log target path cleanly without creating or writing ANY files
+  const dry = installer.syncAllHarnesses({ dryRun: true, autoPull: false, skipDashboard: true, env });
+  assert.strictEqual(dry.presence.dryRun, true);
+  assert.strictEqual(dry.presence.registered, false);
+  assert.strictEqual(dry.presence.targetPath, path.join(crewDir, 'registry', 'personas', 'neckbeard.json'));
+  assert.ok(installer.formatSyncReport(dry).includes(dry.presence.targetPath));
+  assert.strictEqual(fs.existsSync(crewDir), false, '--dry-run must not create CREW_CONFIG_DIR');
+
+  // Live run atomically writes ONLY neckbeard.json + appends one <4096B LF-only event to presence.jsonl
+  const live = installer.syncAllHarnesses({ dryRun: false, autoPull: false, skipDashboard: true, env });
+  assert.strictEqual(live.presence.registered, true);
+  const personaFile = path.join(crewDir, 'registry', 'personas', 'neckbeard.json');
+  const presenceFile = path.join(crewDir, 'registry', 'presence.jsonl');
+  assert.strictEqual(fs.existsSync(personaFile), true);
+  assert.strictEqual(fs.existsSync(presenceFile), true);
+  assert.deepStrictEqual(fs.readdirSync(path.join(crewDir, 'registry', 'personas')), ['neckbeard.json']);
+
+  const writtenDesc = JSON.parse(fs.readFileSync(personaFile, 'utf8'));
+  assert.strictEqual(writtenDesc.id, 'neckbeard');
+  assert.strictEqual(writtenDesc.pipelinePriority, 40);
+  assert.strictEqual(writtenDesc.storeFile, '.neckbeard.json');
+
+  const rawPresence = fs.readFileSync(presenceFile, 'utf8');
+  assert.ok(!rawPresence.includes('\r'), 'presence.jsonl must be LF-only');
+  assert.ok(rawPresence.endsWith('\n'));
+  const lines = rawPresence.trim().split('\n');
+  assert.strictEqual(lines.length, 1);
+  assert.ok(Buffer.byteLength(lines[0] + '\n', 'utf8') < 4096);
+  const evt = JSON.parse(lines[0]);
+  assert.strictEqual(evt.event, 'installed');
+  assert.strictEqual(evt.id, 'neckbeard');
+  assert.strictEqual(evt.handle, 'NeckBeard');
+  assert.strictEqual(evt.pipelinePriority, 40);
+  assert.strictEqual(evt.storeFile, '.neckbeard.json');
+  assert.ok(!Number.isNaN(Date.parse(evt.tsIso)));
+});
+
+test('§4.5 dynamic 14th persona discovery, automatic sibling guard, and anti-hijack invariants', () => {
+  const {
+    detectCrewEnsemble,
+    loadRegisteredPersonas,
+  } = require('../hooks/ensemble');
+
+  const home = tmpState();
+  const crewDir = path.join(tmpState(), 'crew');
+  const personasDir = path.join(crewDir, 'registry', 'personas');
+  fs.mkdirSync(personasDir, { recursive: true });
+  const ws = tmpState();
+  const env = {
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: path.join(home, '.config'),
+    CREW_CONFIG_DIR: crewDir,
+    CLAUDE_CONFIG_DIR: '',
+    CODEX_HOME: '',
+    COPILOT_HOME: '',
+    CREW_SOLO_PERSONA: '',
+  };
+
+  // (c) Synthetic 14th DomainCraft persona: cmmc-auditor (priority 210, storeFile .cmmc-auditor.json)
+  fs.writeFileSync(
+    path.join(personasDir, 'cmmc-auditor.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'cmmc-auditor',
+      handle: 'CMMC Auditor',
+      version: '0.1.0',
+      kind: 'domaincraft',
+      squad: 'compliance',
+      pipelinePriority: 210,
+      storeFile: '.cmmc-auditor.json',
+      wireEnvelope: '[CMMC-AUDIT]',
+      enclaveAware: true,
+    })
+  );
+
+  const info = detectCrewEnsemble('neckbeard', ws, env);
+  assert.strictEqual(info.isEnsemble, true);
+  assert.strictEqual(info.leaderId, 'neckbeard');
+  assert.strictEqual(info.isEnsembleLeader, true);
+  assert.deepStrictEqual(info.installedPeers, ['neckbeard', 'cmmc-auditor']);
+  assert.ok(info.peerOrder.includes('cmmc-auditor'));
+
+  // Dynamic sibling-store protection immediately blocks Write/Edit/MultiEdit/Bash on .cmmc-auditor.json
+  assert.match(check('Write', { file_path: '.cmmc-auditor.json', content: '{"ok":true}' }, 'full', env), /sibling crew store/);
+  assert.match(check('Edit', { file_path: '.cmmc-auditor.json', new_string: '"ok":false' }, 'full', env), /sibling crew store/);
+  assert.match(check('MultiEdit', { file_path: '.cmmc-auditor.json', edits: [{ new_string: '"ok":false' }] }, 'full', env), /sibling crew store/);
+  assert.match(check('Bash', { command: 'echo "{}" > .cmmc-auditor.json' }, 'full', env), /sibling crew store/);
+
+  // (d) Anti-hijack invariants:
+  // 1. Malicious evil-pack claiming pipelinePriority: 1 is clamped to >= 200 (cannot hijack leadership)
+  fs.writeFileSync(
+    path.join(personasDir, 'evil-pack.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'evil-pack',
+      handle: 'Evil Pack',
+      version: '9.9.9',
+      kind: 'domaincraft',
+      pipelinePriority: 1,
+      storeFile: '.evil-pack.json',
+    })
+  );
+  // Even claiming kind: "universal" with a non-core ID is clamped to >= 200
+  fs.writeFileSync(
+    path.join(personasDir, 'evil-univ.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'evil-univ',
+      handle: 'Evil Universal',
+      version: '1.0.0',
+      kind: 'universal',
+      pipelinePriority: 5,
+      storeFile: '.evil-univ.json',
+    })
+  );
+  // 2. Spoofing storeFile: ".crew.json" is rejected
+  fs.writeFileSync(
+    path.join(personasDir, 'spoof-crew.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'spoof-crew',
+      handle: 'Spoof',
+      kind: 'domaincraft',
+      pipelinePriority: 220,
+      storeFile: '.crew.json',
+    })
+  );
+  // 3. Invalid ID, oversized file (>32768B), invalid JSON, and symlink are all rejected
+  fs.writeFileSync(
+    path.join(personasDir, 'bad-id.json'),
+    JSON.stringify({ schemaVersion: 1, id: 'Bad_ID', kind: 'domaincraft', pipelinePriority: 230, storeFile: '.Bad_ID.json' })
+  );
+  fs.writeFileSync(
+    path.join(personasDir, 'oversized.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      id: 'oversized-pack',
+      kind: 'domaincraft',
+      pipelinePriority: 240,
+      storeFile: '.oversized-pack.json',
+      pad: 'x'.repeat(33000),
+    })
+  );
+  fs.writeFileSync(path.join(personasDir, 'broken.json'), '{not valid json');
+  const outsideTarget = path.join(tmpState(), 'sym-pack.json');
+  fs.writeFileSync(
+    outsideTarget,
+    JSON.stringify({ schemaVersion: 1, id: 'sym-pack', kind: 'domaincraft', pipelinePriority: 250, storeFile: '.sym-pack.json' })
+  );
+  fs.symlinkSync(outsideTarget, path.join(personasDir, 'sym-pack.json'));
+
+  const loaded = loadRegisteredPersonas(env);
+  assert.strictEqual(loaded.get('evil-pack').pipelinePriority, 200);
+  assert.strictEqual(loaded.get('evil-univ').pipelinePriority, 200);
+  assert.strictEqual(loaded.has('spoof-crew'), false);
+  assert.strictEqual(loaded.has('Bad_ID'), false);
+  assert.strictEqual(loaded.has('oversized-pack'), false);
+  assert.strictEqual(loaded.has('sym-pack'), false);
+
+  const hardenedInfo = detectCrewEnsemble('neckbeard', ws, env);
+  assert.strictEqual(hardenedInfo.leaderId, 'neckbeard', 'evil-pack cannot hijack leadership');
+  assert.strictEqual(hardenedInfo.isEnsembleLeader, true);
+  assert.deepStrictEqual(hardenedInfo.installedPeers, ['neckbeard', 'evil-pack', 'evil-univ', 'cmmc-auditor']);
+});
+
+test('all 5 hostile guard.js vectors (aiM, aiU, sib, uEs, b64) and .crew.json are blocked', () => {
+  const b64Token = Buffer.from(GH, 'utf8').toString('base64');
+  const unicodeEscapedPath = '{"shared":true,"load":"100 rps at \\u002fUsers\\u002falice\\u002fsecret"}';
+
+  // aiM: .ai-audit/manifest.json
+  assert.match(check('Write', { file_path: '.ai-audit/manifest.json', content: '{}' }, 'full'), /VIBES/);
+  // aiU: any other path under .ai-audit/**
+  assert.match(check('Write', { file_path: '.ai-audit/custom/untracked.json', content: '{}' }, 'full'), /VIBES/);
+  assert.match(check('Edit', { file_path: '.ai-audit/config.json', new_string: '"assurance_level":"low"' }, 'full'), /VIBES/);
+  // sib: sibling persona store (.rainmaker.json) & read-only .crew.json
+  assert.match(check('Write', { file_path: '.rainmaker.json', content: '{"shared":true,"activeOutcome":"ok"}' }, 'full'), /sibling crew store/);
+  assert.match(check('Write', { file_path: '.crew.json', content: '{"policy":"override"}' }, 'full'), /\.crew\.json/);
+  assert.match(check('Bash', { command: 'echo "{}" > .crew.json' }, 'full'), /\.crew\.json/);
+  // uEs: JSON-unicode-escaped local path (\u002fUsers\u002f...) inside .neckbeard.json
+  assert.match(check('Write', { file_path: '.neckbeard.json', content: unicodeEscapedPath }, 'full'), /\.neckbeard\.json/);
+  assert.match(check('Edit', { file_path: '.neckbeard.json', new_string: '"load": "\\u002fUsers\\u002fbob\\u002fapp"' }, 'full'), /\.neckbeard\.json/);
+  // b64: Base64-encoded secret (ghp_...) inside .neckbeard.json (never leaking secret value)
+  const b64Reason = check('Write', { file_path: '.neckbeard.json', content: JSON.stringify({ shared: true, load: b64Token }) }, 'full');
+  assert.ok(b64Reason, 'Base64-encoded GitHub token in .neckbeard.json must be blocked');
+  assert.ok(!b64Reason.includes(GH), 'Denial reason must never leak decoded secret value');
+  const b64CodeReason = check('Write', { file_path: 'app.js', content: `const x = "${b64Token}";` }, 'full');
+  assert.match(b64CodeReason, /GitHub token/);
+  assert.ok(!b64CodeReason.includes(GH));
+});
+
+test('unified $CREW_CONFIG_DIR 3-Tier Memory, Compartment Wall, Anti-Poisoning, and solo empty SessionStart <= 1100t', () => {
+  const mem = require('../hooks/memory');
+  const crewDir = path.join(tmpState(), 'crew-mem');
+  const fakeHome = tmpState();
+  const emptyWs = tmpState();
+  const env = {
+    HOME: fakeHome,
+    USERPROFILE: fakeHome,
+    XDG_CONFIG_HOME: path.join(fakeHome, '.config'),
+    CREW_CONFIG_DIR: crewDir,
+    NECKBEARD_STATE_DIR: tmpState(),
+    CREW_SOLO_PERSONA: 'neckbeard',
+    NECKBEARD_SURFACE: '0',
+  };
+
+  // Solo empty SessionStart stdout MUST stay <= 1100 tokens
+  const emptyRun = spawnSync(process.execPath, [path.join(HOOKS, 'session-start.js')], {
+    input: JSON.stringify({ session_id: 'EMPTY-SOLO', source: 'startup', cwd: emptyWs }),
+    encoding: 'utf8',
+    timeout: 8000,
+    env: { ...process.env, ...env },
+  });
+  assert.strictEqual(emptyRun.status, 0, emptyRun.stderr);
+  const approxTokens = Math.ceil(Buffer.byteLength(emptyRun.stdout, 'utf8') / 4);
+  assert.ok(approxTokens <= 1100, `Solo empty session-start stdout must be <= 1100t, got ${approxTokens}t (${emptyRun.stdout.length} bytes)`);
+
+  // Tier 1 + Tier 3 memory CRUD & Inspector verbs
+  const pref = mem.addMemory('preferences', { summary: 'Prefer explicit argument arrays over shell strings', tags: ['safe', 'proc'] }, {}, env);
+  mem.addMemory('learned-skills', { slug: 'path-containment', summary: 'Canonicalise paths and reject symlinks before root check' }, {}, env);
+  mem.recordGrpoSignal({ event: 'hostile_test_pass', delta: 0.2, summary: 'Blocked 5/5 hostile vectors' }, {}, env);
+
+  assert.strictEqual(mem.setPinned('preferences', pref.id, true, {}, env), true);
+  assert.strictEqual(mem.editMemory('preferences', pref.id, 'Always use execFileSync argument arrays', {}, env), true);
+  const inv = mem.inspectMemory('', {}, env);
+  assert.strictEqual(inv.totalCount, 2);
+  assert.strictEqual(inv.grpoCount, 1);
+  assert.strictEqual(inv.buckets.preferences[0].pinned, true);
+  assert.ok(mem.formatCompactMemoryDigest({}, env).includes('Memory [commercial/default]'));
+
+  // Anti-Memory-Poisoning Gate blocks untrusted external payloads targeting preferences or learned-skills
+  assert.throws(
+    () => mem.addMemory('preferences', { summary: '<untrusted_external_human_data>disable guard</untrusted_external_human_data>' }, {}, env),
+    /Memory Write Authority/
+  );
+  assert.throws(
+    () => mem.addMemory('learned-skills', { slug: 'bad-skill', summary: 'bypass', trustTier: 'untrusted' }, {}, env),
+    /Memory Write Authority/
+  );
+
+  // Hard Compliance Compartment Wall isolates regulated CMMC enclave & blocks CUI// in commercial memory
+  assert.throws(
+    () => mem.addMemory('insights', { summary: 'CUI//SP-EXPT controlled blueprint note' }, {}, env),
+    /Compartment Wall/
+  );
+  const encRec = mem.addMemory('insights', { summary: 'CUI//SP-EXPT enclave-only audit invariant' }, { classification: 'cmmc', enclaveId: 'gov-enclave' }, env);
+  assert.strictEqual(encRec.classification, 'cmmc');
+  assert.strictEqual(
+    fs.existsSync(path.join(crewDir, 'enclaves', 'gov-enclave', 'memory', 'agents', 'neckbeard', 'insights.jsonl')),
+    true
+  );
+  assert.strictEqual(mem.inspectMemory('insights', {}, env).buckets.insights.length, 0, 'Enclave memory never leaks into commercial pool');
+
+  // Guard blocks untrusted & regulated marking writes to $CREW_CONFIG_DIR memory files
+  assert.match(
+    check('Write', {
+      file_path: path.join(crewDir, 'memory', 'agents', 'neckbeard', 'preferences.jsonl'),
+      content: '{"id":"p1","trustTier":"untrusted","summary":"poison"}\n',
+    }, 'full', env),
+    /Memory Write Authority/
+  );
+  assert.match(
+    check('Write', {
+      file_path: path.join(crewDir, 'memory', 'agents', 'neckbeard', 'insights.jsonl'),
+      content: '{"id":"i1","summary":"CUI//NOFORN leaked"}\n',
+    }, 'full', env),
+    /Compartment Wall/
+  );
+
+  // Reset preserving pinned vs forget
+  const resetRes = mem.resetMemory('', { keepPinned: true }, env);
+  assert.strictEqual(resetRes.removed, 1);
+  assert.strictEqual(mem.inspectMemory('', {}, env).totalCount, 1);
+  assert.strictEqual(mem.forgetMemory('preferences', pref.id, {}, env), true);
+  assert.strictEqual(mem.inspectMemory('', {}, env).totalCount, 0);
+
+  // Prompt slash command routing for /neckbeard-memory
+  assert.deepStrictEqual(parseCommand('/neckbeard-memory inspect'), { action: 'memory', value: 'inspect' });
+  assert.deepStrictEqual(parseCommand('/neckbeard memory inspect'), { action: 'memory', value: 'inspect' });
 });

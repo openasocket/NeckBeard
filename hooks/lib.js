@@ -1,11 +1,27 @@
 'use strict';
-// Shared by every neckbeard hook: levels, per-session state, guard telemetry counters, hook I/O.
+// Shared by every neckbeard hook: levels, per-session state, $CREW_CONFIG_DIR helpers,
+// atomic writes, guard telemetry counters, and hook I/O.
 // No dependencies, no network, writes only its own state files.
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
+const {
+  OFFICIAL_CORE_PRIORITIES,
+  CREW_PIPELINE_ORDER,
+  CREW_STORE_FILES,
+  getHomeDir,
+  getCrewConfigDir,
+  getPersonasRegistryDir,
+  getPresenceLogPath,
+  validatePersonaDescriptor,
+  loadRegisteredPersonas,
+  getDynamicPeerCatalog,
+  getDynamicPeerStoreFiles,
+  detectCrewEnsemble,
+  formatEnsembleRules,
+} = require('./ensemble');
 
 const LEVELS = ['lite', 'full', 'paranoid'];
 const DEFAULT_LEVEL = 'full';
@@ -17,15 +33,33 @@ function normalizeLevel(value) {
 }
 
 function configBase(env = process.env) {
-  return env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+  const safeEnv = env || process.env;
+  return safeEnv.XDG_CONFIG_HOME || path.join(getHomeDir(safeEnv), '.config');
+}
+
+function crewConfigDir(env = process.env) {
+  return getCrewConfigDir(env);
 }
 
 function claudeDir(env = process.env) {
-  return env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  const safeEnv = env || process.env;
+  return safeEnv.CLAUDE_CONFIG_DIR || path.join(getHomeDir(safeEnv), '.claude');
 }
 
 function bandDir(env = process.env) {
   return path.join(configBase(env), 'neckbeard', 'telemetry');
+}
+
+function atomicWriteFile(filePath, content, mode = 0o600) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const suffix = `${process.pid}.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
+  const tmp = `${filePath}.${suffix}.tmp`;
+  fs.writeFileSync(tmp, content, { mode });
+  fs.renameSync(tmp, filePath);
+}
+
+function estimateTokens(text) {
+  return Math.ceil(Buffer.byteLength(String(text || ''), 'utf8') / 4);
 }
 
 // NECKBEARD_LEVEL beats the config file; anything unreadable falls back to full.
@@ -67,16 +101,11 @@ function readLevel(sessionId, env = process.env) {
 function writeLevel(sessionId, level, env = process.env) {
   const file = statePath(sessionId, env);
   if (file) {
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, level, { mode: 0o600 });
-    fs.renameSync(tmp, file);
+    atomicWriteFile(file, level, 0o600);
   }
-  // Also sync the active level flag in stateDir (and CLAUDE_CONFIG_DIR when writable) for the Claude Code band & statusline.
   try {
     const dir = stateDir(env);
-    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(dir, '.neckbeard-active'), level, { mode: 0o600 });
+    atomicWriteFile(path.join(dir, '.neckbeard-active'), level, 0o600);
   } catch { /* best-effort */ }
 }
 
@@ -88,7 +117,6 @@ function guardStatsPath(env = process.env) {
 function recordGuardBlock(sessionId, kind, cwd = process.cwd(), env = process.env) {
   try {
     const file = guardStatsPath(env);
-    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     let data = { total: 0, sessions: {}, projects: {} };
     try { data = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* fresh */ }
     data.total = (Number(data.total) || 0) + 1;
@@ -98,7 +126,7 @@ function recordGuardBlock(sessionId, kind, cwd = process.cwd(), env = process.en
     if (!data.projects[proj]) data.projects[proj] = { blocks: 0, byKind: {} };
     data.projects[proj].blocks = (Number(data.projects[proj].blocks) || 0) + 1;
     data.projects[proj].byKind[kind] = (Number(data.projects[proj].byKind[kind]) || 0) + 1;
-    fs.writeFileSync(file, JSON.stringify(data), { mode: 0o600 });
+    atomicWriteFile(file, JSON.stringify(data), 0o600);
   } catch { /* best-effort */ }
 }
 
@@ -157,11 +185,12 @@ function rules(level) {
   return `NECKBEARD MODE ACTIVE, level: ${level}. Switch with /neckbeard, $neckbeard, or @neckbeard, then lite, full, paranoid, or off.\n\n${body.trim()}`;
 }
 
-const { CREW_PIPELINE_ORDER, CREW_STORE_FILES, detectCrewEnsemble, formatEnsembleRules } = require('./ensemble');
-
 module.exports = {
   LEVELS, DEFAULT_LEVEL, normalizeLevel, defaultLevel, stateDir, statePath, readLevel, writeLevel,
-  configBase, claudeDir, bandDir, recordGuardBlock, readGuardStats,
-  readInput, emitContext, emitDeny, rules,
-  CREW_PIPELINE_ORDER, CREW_STORE_FILES, detectCrewEnsemble, formatEnsembleRules,
+  configBase, crewConfigDir, claudeDir, bandDir, atomicWriteFile, estimateTokens,
+  recordGuardBlock, readGuardStats, readInput, emitContext, emitDeny, rules,
+  OFFICIAL_CORE_PRIORITIES, CREW_PIPELINE_ORDER, CREW_STORE_FILES,
+  getHomeDir, getCrewConfigDir, getPersonasRegistryDir, getPresenceLogPath,
+  validatePersonaDescriptor, loadRegisteredPersonas, getDynamicPeerCatalog,
+  getDynamicPeerStoreFiles, detectCrewEnsemble, formatEnsembleRules,
 };

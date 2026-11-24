@@ -44,12 +44,16 @@ test('skill directory layout', () => {
     assert.strictEqual(fs.existsSync(p(removed)), false, `${removed} must not exist`);
   }
   for (const required of [
+    'crew-persona.json',
+    'SPEC.md',
+    '.crew/sparks.example.yaml',
     'skills/neckbeard/SKILL.md',
     'skills/neckbeard-review/SKILL.md',
     'skills/neckbeard-audit/SKILL.md',
     'skills/neckbeard-debt/SKILL.md',
     'skills/neckbeard-gain/SKILL.md',
     'skills/neckbeard-map/SKILL.md',
+    'skills/neckbeard-memory/SKILL.md',
     'agents/neckbeard.md',
     'agents/neckbeard-reviewer.md',
     'docs/crew-protocol.md',
@@ -58,6 +62,7 @@ test('skill directory layout', () => {
     'hooks/band/analyzer.ts',
     'hooks/band/dashboard.ts',
     'hooks/band-import.js',
+    'hooks/memory.js',
     'hooks/vibes.js',
     'scripts/install-all.js',
     'pi-extension/index.js',
@@ -69,6 +74,53 @@ test('skill directory layout', () => {
     'AGENTS.md',
   ]) {
     assert.strictEqual(fs.existsSync(p(required)), true, `${required} must exist`);
+  }
+});
+
+test('crew-persona.json matches §4.5 locked schema, skills directory, and package.json version', () => {
+  const pkg = readJson('package.json');
+  const persona = readJson('crew-persona.json');
+  const { validatePersonaDescriptor } = require('../hooks/ensemble');
+
+  const validated = validatePersonaDescriptor(persona);
+  assert.strictEqual(validated.valid, true, validated.reason);
+  assert.strictEqual(persona.schemaVersion, 1);
+  assert.strictEqual(persona.id, 'neckbeard');
+  assert.strictEqual(persona.handle, 'NeckBeard');
+  assert.strictEqual(persona.version, pkg.version);
+  assert.strictEqual(persona.kind, 'universal');
+  assert.strictEqual(persona.squad, 'build');
+  assert.strictEqual(persona.pipelinePriority, 40);
+  assert.strictEqual(persona.storeFile, '.neckbeard.json');
+  assert.strictEqual(persona.wireEnvelope, '[NECKBEARD-GATE]');
+  assert.deepStrictEqual(persona.alterEgos, [
+    { id: 'larry', name: 'Ashy Larry' },
+    { id: 'lari', name: 'Ashy Lari' },
+  ]);
+  assert.strictEqual(persona.themePosture, 'dark-only');
+  assert.deepStrictEqual(persona.gates, ['Safe', 'Fast@Load', 'Done']);
+  assert.strictEqual(
+    persona.pushbackDomain,
+    'Unvalidated trust boundaries, O(n^2) / unbounded memory bottlenecks at named load, unfinished error paths'
+  );
+  assert.strictEqual(persona.memoryNamespace, 'memory/agents/neckbeard');
+  assert.strictEqual(persona.enclaveAware, true);
+  assert.strictEqual(persona.installerScript, 'scripts/install-all.js');
+
+  const actualSkills = fs
+    .readdirSync(p('skills'), { withFileTypes: true })
+    .filter((d) => d.isDirectory() && fs.existsSync(path.join(p('skills'), d.name, 'SKILL.md')))
+    .map((d) => d.name)
+    .sort();
+  assert.deepStrictEqual([...persona.skills].sort(), actualSkills);
+
+  const sparks = readText('.crew/sparks.example.yaml');
+  assert.ok(sparks.includes('engine: crew-spark'));
+  assert.ok(!/Crew Cue/i.test(sparks), 'Never brand Crew Spark as Crew Cue');
+  for (const doc of ['SPEC.md', '.crew/sparks.example.yaml', 'skills/neckbeard-memory/SKILL.md']) {
+    const content = readText(doc);
+    assert.ok(!/\/(?:Users|home)\//.test(content), `${doc} must not contain local home directory paths`);
+    assert.ok(!content.includes('dev-' + 'shit'), `${doc} must not contain local workspace paths`);
   }
 });
 

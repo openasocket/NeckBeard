@@ -9,11 +9,12 @@ const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
-const { CREW_PIPELINE_ORDER, CREW_STORE_FILES } = require('./ensemble');
+const { CREW_PIPELINE_ORDER, CREW_STORE_FILES, getDynamicPeerStoreFiles } = require('./ensemble');
 
 const BUDGET = Number(process.env.NECKBEARD_SURFACE_CHARS || 1500);
 const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 1200);
 const DEFAULT_MAP_MAX_AGE_MS = Number(process.env.NECKBEARD_MAP_MAX_AGE_HOURS || 24) * 60 * 60 * 1000;
+const MAX_JSONL_LINE_BYTES = 4096;
 
 // Sibling 13-Persona Crew Universe repo-local stores and shared PM intake queue.
 const CREW_PEER_FILES = Object.freeze(
@@ -59,8 +60,236 @@ const ALLOWED_ARCH_ROLES = new Set([
   'gateway', 'interface', 'service', 'persistence', 'security', 'runtime', 'pipeline', 'core',
 ]);
 
-// Patterns that must always be censored from load strings or boundary entries.
-const SENSITIVE_TEXT = /(?:https?:\/\/\S+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[\w.+-]+@[\w-]+\.[\w.-]+\b|\b[\w-]+\.(?:internal|corp|local|lan|amazonaws\.com|rds\.amazonaws\.com|svc\.cluster\.local)\b|\/(?:Users|home|private|var\/folders)\/\S+|[A-Za-z]:\\\S+|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|npm_[A-Za-z0-9]{20,})\b)/gi;
+// Patterns that must always be censored from load strings, .neckbeard.json, inbox, or memory entries.
+const SENSITIVE_TEXT = /(?:https?:\/\/\S+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\b[\w.+-]+@[\w-]+\.[\w.-]+\b|\b[\w-]+\.(?:internal|corp|local|lan|intranet|amazonaws\.com|rds\.amazonaws\.com|svc\.cluster\.local)\b|(?<![A-Za-z0-9_.-])(?:\/(?:Users|home|private|var\/folders|tmp|Volumes|etc|root)\/\S+|~\/[^\s"'<>]+)|(?<![A-Za-z0-9])[A-Za-z]:[\\/][^\s"'<>]+|-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----|\b(?:AKIA|ASIA)(?![A-Z0-9]*EXAMPLE)[A-Z0-9]{16}\b|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-(?:ant-|proj-|live-)[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|npm_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}|(?:sk|rk|pk)_live_[0-9A-Za-z]{20,})\b)/gi;
+
+const SENSITIVE_SECRET_RE = /(?:-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----|\b(?:AKIA|ASIA)(?![A-Z0-9]*EXAMPLE)[A-Z0-9]{16}\b|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-(?:ant-|proj-|live-)[A-Za-z0-9_-]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|npm_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}|(?:sk|rk|pk)_live_[0-9A-Za-z]{20,})\b)/;
+
+// Bounded multi-view de-obfuscation (RT-GATE-01): invisible chars, NFKC, \uXXXX/\xXX, %XX, Base64.
+const MAX_DECODE_DEPTH = 3;
+const MAX_BASE64_CANDIDATES = 128;
+const MAX_BASE64_DECODED_BYTES = 4096;
+const INVISIBLE_CHAR_RE = /[\u0000\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFE00-\uFE0F\uFEFF\uFFA0]/g;
+const BASE64_SPAN_RE = /[A-Za-z0-9+/_-]{12,}={0,2}/g;
+const UTF8_FATAL_DECODER = new TextDecoder('utf-8', { fatal: true });
+
+function stripInvisibleChars(input) {
+  return String(input || '').replace(INVISIBLE_CHAR_RE, '');
+}
+
+function normalizeUnicode(input) {
+  return stripInvisibleChars(input)
+    .normalize('NFKC')
+    .replace(/[\u2215\u2044\u29F8\uFF0F]/g, '/')
+    .replace(/[\u29F5\u29F9\uFE68\uFF3C]/g, '\\')
+    .replace(/[\u2024\u3002\uFF0E\uFF61]/g, '.')
+    .replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+}
+
+function parseHexRange(str, start, len) {
+  if (start + len > str.length) return -1;
+  let val = 0;
+  for (let i = 0; i < len; i++) {
+    const c = str.charCodeAt(start + i);
+    const nib = c >= 48 && c <= 57 ? c - 48 : c >= 97 && c <= 102 ? c - 87 : c >= 65 && c <= 70 ? c - 55 : -1;
+    if (nib < 0) return -1;
+    val = (val << 4) | nib;
+  }
+  return val;
+}
+
+function decodeEscapesOnce(input) {
+  const s = String(input || '');
+  if (!s.includes('\\')) return s;
+  let out = '';
+  for (let i = 0; i < s.length; ) {
+    if (s[i] === '\\' && i + 1 < s.length) {
+      const next = s[i + 1];
+      if ((next === 'u' || next === 'U') && i + 6 <= s.length) {
+        const hi = parseHexRange(s, i + 2, 4);
+        if (hi >= 0) {
+          if (hi >= 0xd800 && hi <= 0xdbff && i + 12 <= s.length && s[i + 6] === '\\' && (s[i + 7] === 'u' || s[i + 7] === 'U')) {
+            const lo = parseHexRange(s, i + 8, 4);
+            if (lo >= 0xdc00 && lo <= 0xdfff) {
+              out += String.fromCodePoint(0x10000 + (((hi - 0xd800) << 10) | (lo - 0xdc00)));
+              i += 12;
+              continue;
+            }
+          }
+          out += String.fromCharCode(hi);
+          i += 6;
+          continue;
+        }
+      }
+      if ((next === 'x' || next === 'X') && i + 4 <= s.length) {
+        const b = parseHexRange(s, i + 2, 2);
+        if (b >= 0) { out += String.fromCharCode(b); i += 4; continue; }
+      }
+      if (next === '/') { out += '/'; i += 2; continue; }
+      if (next === '\\') { out += '\\'; i += 2; continue; }
+      if (next === '"') { out += '"'; i += 2; continue; }
+      if (next === 'n') { out += '\n'; i += 2; continue; }
+      if (next === 'r') { out += '\r'; i += 2; continue; }
+      if (next === 't') { out += '\t'; i += 2; continue; }
+    }
+    out += s[i++];
+  }
+  return out;
+}
+
+function decodeJsonEscapes(input) {
+  let cur = stripInvisibleChars(input);
+  for (let pass = 0; pass < MAX_DECODE_DEPTH; pass++) {
+    const next = stripInvisibleChars(decodeEscapesOnce(cur));
+    if (next === cur) break;
+    cur = next;
+  }
+  return cur;
+}
+
+function decodeUrlPercent(input) {
+  let cur = String(input || '');
+  for (let pass = 0; pass < MAX_DECODE_DEPTH; pass++) {
+    if (!cur.includes('%')) break;
+    const raw = Buffer.from(cur, 'utf8');
+    const out = [];
+    let changed = false;
+    for (let i = 0; i < raw.length; ) {
+      if (raw[i] === 0x25 && i + 2 < raw.length) {
+        const val = parseHexRange(String.fromCharCode(raw[i + 1], raw[i + 2]), 0, 2);
+        if (val >= 0) { out.push(val); changed = true; i += 3; continue; }
+      }
+      out.push(raw[i++]);
+    }
+    if (!changed) break;
+    const next = Buffer.from(out).toString('utf8');
+    if (next === cur) break;
+    cur = next;
+  }
+  return cur;
+}
+
+function decodeBase64Text(token) {
+  const trimmed = String(token || '').trim();
+  if (trimmed.length < 12) return null;
+  const hasStd = trimmed.includes('+') || trimmed.includes('/');
+  const hasUrl = trimmed.includes('-') || trimmed.includes('_');
+  if (hasStd && hasUrl) return null;
+  const unpadded = trimmed.replace(/=+$/, '');
+  const padCount = trimmed.length - unpadded.length;
+  if (padCount > 2 || unpadded.includes('=') || (padCount > 0 && trimmed.length % 4 !== 0) || unpadded.length % 4 === 1) return null;
+  const estimated = Math.floor((unpadded.length * 3) / 4);
+  if (estimated === 0 || estimated > MAX_BASE64_DECODED_BYTES) return null;
+  const std = hasUrl ? unpadded.replace(/-/g, '+').replace(/_/g, '/') : unpadded;
+  if (!/^[A-Za-z0-9+/]+$/.test(std)) return null;
+  const mod = std.length % 4;
+  const buf = Buffer.from(mod === 0 ? std : std + '='.repeat(4 - mod), 'base64');
+  if (!buf.length || buf.length > MAX_BASE64_DECODED_BYTES) return null;
+  let text;
+  try { text = UTF8_FATAL_DECODER.decode(buf); } catch { return null; }
+  let total = 0;
+  let printable = 0;
+  for (const ch of text) {
+    total += 1;
+    const cp = ch.codePointAt(0);
+    if (ch === '\t' || ch === '\n' || ch === '\r' || (cp >= 0x20 && cp !== 0x7f && !(cp >= 0x80 && cp <= 0x9f))) printable += 1;
+  }
+  if (total < 7 || printable * 100 < total * 85) return null;
+  return text;
+}
+
+function extractBase64DecodedViews(input) {
+  const s = String(input || '');
+  const decodedViews = [];
+  const seenTokens = new Set();
+  const seenDecoded = new Set();
+
+  const tryCand = (cand) => {
+    const dec = decodeBase64Text(cand);
+    if (!dec) return;
+    const norm = normalizeUnicode(decodeUrlPercent(decodeJsonEscapes(dec)));
+    if (!norm || seenDecoded.has(norm)) return;
+    seenDecoded.add(norm);
+    decodedViews.push(norm);
+    // One nested Base64 layer
+    if (decodedViews.length < MAX_BASE64_CANDIDATES) {
+      BASE64_SPAN_RE.lastIndex = 0;
+      let nm;
+      while ((nm = BASE64_SPAN_RE.exec(norm)) !== null) {
+        const nested = decodeBase64Text(nm[0]);
+        if (nested) {
+          const nestedNorm = normalizeUnicode(decodeUrlPercent(decodeJsonEscapes(nested)));
+          if (nestedNorm && !seenDecoded.has(nestedNorm)) {
+            seenDecoded.add(nestedNorm);
+            decodedViews.push(nestedNorm);
+            break;
+          }
+        }
+      }
+      BASE64_SPAN_RE.lastIndex = 0;
+    }
+  };
+
+  BASE64_SPAN_RE.lastIndex = 0;
+  let m;
+  while ((m = BASE64_SPAN_RE.exec(s)) !== null) {
+    if (seenTokens.size >= MAX_BASE64_CANDIDATES) break;
+    const span = m[0];
+    const cands = [span];
+    if (/[_\-/]/.test(span)) {
+      for (const part of span.split(/[_\-/]/)) {
+        if (part.length >= 12 && !cands.includes(part)) cands.push(part);
+      }
+    }
+    for (const c of cands) {
+      if (seenTokens.size >= MAX_BASE64_CANDIDATES) break;
+      if (seenTokens.has(c)) continue;
+      seenTokens.add(c);
+      tryCand(c);
+    }
+  }
+  BASE64_SPAN_RE.lastIndex = 0;
+  return decodedViews;
+}
+
+function buildInspectionViews(text) {
+  const raw = String(text || '');
+  if (!raw) return [];
+  const views = [];
+  const seen = new Set();
+  const push = (view, value) => {
+    if (!value || seen.has(value)) return;
+    seen.add(value);
+    views.push({ view, text: value });
+  };
+  push('raw', raw);
+  push('normalized', normalizeUnicode(raw));
+  const jsonUnescaped = normalizeUnicode(decodeJsonEscapes(raw));
+  push('json_unescaped', jsonUnescaped);
+  if (jsonUnescaped.includes('%') || raw.includes('%')) {
+    push('url_decoded', normalizeUnicode(decodeUrlPercent(jsonUnescaped)));
+  }
+  for (const b64 of extractBase64DecodedViews(raw)) push('base64_decoded', b64);
+  if (jsonUnescaped !== raw) {
+    for (const b64 of extractBase64DecodedViews(jsonUnescaped)) push('base64_decoded', b64);
+  }
+  return views;
+}
+
+function findSensitiveMatch(text) {
+  const views = buildInspectionViews(text);
+  for (const v of views) {
+    SENSITIVE_TEXT.lastIndex = 0;
+    const m = SENSITIVE_TEXT.exec(v.text);
+    SENSITIVE_TEXT.lastIndex = 0;
+    if (m) {
+      const hit = m[0];
+      if (SENSITIVE_SECRET_RE.test(hit)) return `[redacted-secret:${v.view}]`;
+      return v.view === 'raw' ? hit : `[${v.view}] ${hit}`;
+    }
+  }
+  return null;
+}
 
 function listFiles(root) {
   try {
@@ -478,6 +707,16 @@ function sanitizeProjectConfig(cfg = {}) {
   return out;
 }
 
+function collectJsonStrings(value, out = [], depth = 0) {
+  if (depth > 8 || value === null || value === undefined) return out;
+  if (typeof value === 'string') { out.push(value); return out; }
+  if (Array.isArray(value)) { for (const item of value) collectJsonStrings(item, out, depth + 1); return out; }
+  if (typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) { out.push(k); collectJsonStrings(v, out, depth + 1); }
+  }
+  return out;
+}
+
 // Validates a raw JSON string written to .neckbeard.json by an agent tool call; returns a denial reason if unsafe.
 function checkNeckbeardJson(text) {
   let parsed;
@@ -486,15 +725,18 @@ function checkNeckbeardJson(text) {
   } catch {
     return 'invalid JSON in .neckbeard.json';
   }
-  const raw = String(text || '');
-  SENSITIVE_TEXT.lastIndex = 0;
-  const m = SENSITIVE_TEXT.exec(raw);
-  SENSITIVE_TEXT.lastIndex = 0;
-  if (m) {
-    return `sensitive value or absolute path/URL ("${m[0].slice(0, 24)}...") in .neckbeard.json. Store only numeric load targets and repo-relative file paths with closed sink tags`;
-  }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return '.neckbeard.json must be a JSON object';
+  }
+  const hit = findSensitiveMatch(String(text || ''));
+  if (hit) {
+    return `sensitive value or absolute path/URL ("${hit.slice(0, 32)}...") in .neckbeard.json. Store only numeric load targets and repo-relative file paths with closed sink tags`;
+  }
+  for (const s of collectJsonStrings(parsed)) {
+    const strHit = findSensitiveMatch(s);
+    if (strHit) {
+      return `sensitive value or absolute path/URL ("${strHit.slice(0, 32)}...") in .neckbeard.json. Store only numeric load targets and repo-relative file paths with closed sink tags`;
+    }
   }
   return null;
 }
@@ -700,7 +942,7 @@ function formatProjectContext(root = process.cwd(), env = process.env, opts = {}
   } else if (overrides) {
     lines.push(`Load default (${cfg.shared === false ? 'local' : '.neckbeard.json, shared'}):${overrides}`);
   } else {
-    lines.push('Load default: unset (if Fast gate applies and prompt/repo gives no load, ask once and save with /neckbeard load <value> or to .neckbeard.json)');
+    lines.push('Load default: unset (save via /neckbeard load <value>)');
   }
   if (extLine) lines.push(`Trust Map [ext] ${extLine}`);
   if (intLine) lines.push(`Trust Map [int] ${intLine}`);
@@ -725,35 +967,50 @@ function formatProjectContext(root = process.cwd(), env = process.env, opts = {}
   return lines.join('\n').slice(0, MAP_BUDGET);
 }
 
-// Validates any 13-Persona Crew Universe store JSON (.{id}.json) or JSONL (.rainmaker-inbox.jsonl)
-// against secrets, URLs, hostnames, IPs, emails, and absolute local paths.
+// Validates any Crew Universe store JSON (.{id}.json) or JSONL (.rainmaker-inbox.jsonl)
+// against secrets, URLs, hostnames, IPs, emails, absolute local paths (raw + escaped + Base64),
+// CRLF line endings, and < 4096B JSONL line bounds.
 function checkCrewStoreJson(rawText, fileName = '') {
-  const s = String(rawText || '').trim();
+  const raw = String(rawText || '');
+  const s = raw.trim();
   if (!s) return 'empty crew store file';
-  if (SENSITIVE_TEXT.test(s)) {
-    SENSITIVE_TEXT.lastIndex = 0;
-    return 'contains a URL, internal hostname, IP address, email, or absolute local path';
+  const hit = findSensitiveMatch(raw);
+  if (hit) {
+    return `contains a secret, URL, internal hostname, IP address, email, or absolute local path (${hit.slice(0, 32)})`;
   }
-  SENSITIVE_TEXT.lastIndex = 0;
   if (String(fileName).endsWith('.jsonl')) {
-    const lines = s.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (raw.includes('\r')) return 'JSONL file must use LF-only line endings (CR/CRLF forbidden)';
+    const lines = raw.split('\n').filter((l) => l.trim().length > 0);
     for (let i = 0; i < lines.length; i++) {
+      const byteLen = Buffer.byteLength(lines[i] + '\n', 'utf8');
+      if (byteLen >= MAX_JSONL_LINE_BYTES) {
+        return `line ${i + 1} exceeds strict < ${MAX_JSONL_LINE_BYTES} UTF-8 byte limit (${byteLen} bytes)`;
+      }
       let row;
       try { row = JSON.parse(lines[i]); } catch { return `invalid JSONL on line ${i + 1}`; }
       if (!row || typeof row !== 'object' || Array.isArray(row)) return `line ${i + 1} must be a JSON object`;
+      for (const val of collectJsonStrings(row)) {
+        const valHit = findSensitiveMatch(val);
+        if (valHit) return `line ${i + 1} contains sensitive value (${valHit.slice(0, 32)})`;
+      }
     }
     return null;
   }
   let parsed;
   try { parsed = JSON.parse(s); } catch { return 'invalid JSON'; }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'root must be a JSON object';
+  for (const val of collectJsonStrings(parsed)) {
+    const valHit = findSensitiveMatch(val);
+    if (valHit) return `contains sensitive value (${valHit.slice(0, 32)})`;
+  }
   return null;
 }
 
-// Reads sibling 13-Persona Crew Universe stores (.{id}.json, .rainmaker-inbox.jsonl) when present.
-function readCrewPeerStores(root = process.cwd()) {
+// Reads sibling Crew Universe stores (built-in 12 + dynamically registered Nth peers, plus .rainmaker-inbox.jsonl).
+function readCrewPeerStores(root = process.cwd(), env = process.env) {
   const peers = {};
-  for (const [key, relFile] of Object.entries(CREW_PEER_FILES)) {
+  const peerFileMap = getDynamicPeerStoreFiles('neckbeard', env);
+  for (const [key, relFile] of Object.entries(peerFileMap)) {
     const fp = path.join(root, relFile);
     if (!fs.existsSync(fp)) continue;
     try {
@@ -876,7 +1133,12 @@ function appendCrewInboxProposal(root = process.cwd(), proposal = {}) {
     status: 'pending',
   };
   const fp = path.join(root, RAINMAKER_INBOX_FILE);
-  fs.appendFileSync(fp, JSON.stringify(record) + '\n', 'utf8');
+  const line = JSON.stringify(record).replace(/\r/g, '') + '\n';
+  if (Buffer.byteLength(line, 'utf8') >= MAX_JSONL_LINE_BYTES) {
+    record.summary = record.summary.slice(0, 120);
+  }
+  const safeLine = JSON.stringify(record).replace(/\r/g, '') + '\n';
+  fs.appendFileSync(fp, safeLine, 'utf8');
   return record;
 }
 
@@ -891,6 +1153,13 @@ module.exports = {
   sanitizeBoundaryLoad,
   sanitizeArchitecture,
   sanitizeProjectConfig,
+  stripInvisibleChars,
+  normalizeUnicode,
+  decodeJsonEscapes,
+  decodeUrlPercent,
+  extractBase64DecodedViews,
+  buildInspectionViews,
+  findSensitiveMatch,
   checkNeckbeardJson,
   checkCrewStoreJson,
   readCrewPeerStores,
@@ -898,6 +1167,7 @@ module.exports = {
   appendCrewInboxProposal,
   CREW_PEER_FILES,
   RAINMAKER_INBOX_FILE,
+  MAX_JSONL_LINE_BYTES,
   parseLoadMetrics,
   checkRiskLoadExpiry,
   readProjectConfig,

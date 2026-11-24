@@ -8,6 +8,7 @@
         "hooks/band/analyzer.ts->http-in",
         "hooks/band/dashboard.ts->webhook-in",
         "hooks/lib.js->cli-in",
+        "hooks/memory.js->cli-in",
         "hooks/surface.js->http-in",
         "scripts/install-all.js->cli-in"
       ],
@@ -24,7 +25,6 @@
         "hooks/band-import.js->auth",
         "hooks/band/analyzer.ts->auth",
         "hooks/band/dashboard.ts->auth",
-        "hooks/guard.js->auth",
         "hooks/surface.js->auth",
         "hooks/vibes.js->auth"
       ],
@@ -35,7 +35,9 @@
         "hooks/band/dashboard.ts->fs,serde",
         "hooks/band/register.tsx->fs,serde",
         "hooks/ensemble.js->fs,serde",
+        "hooks/guard.js->sql,fs,serde",
         "hooks/lib.js->fs,serde",
+        "hooks/memory.js->fs,serde",
         "hooks/prompt.js->fs",
         "hooks/surface.js->sql,fs,serde",
         "hooks/vibes.js->fs,serde",
@@ -46,6 +48,7 @@
         "hooks/band/analyzer.ts->proc,crypto,env",
         "hooks/guard.js->env",
         "hooks/lib.js->crypto",
+        "hooks/memory.js->crypto",
         "hooks/prompt.js->proc",
         "hooks/session-start.js->proc,env",
         "hooks/subagent-start.js->env",
@@ -63,17 +66,18 @@
     }
   },
   "architecture": {
-    "fileCount": 17,
-    "moduleCount": 6,
-    "boundaryFileCount": 15,
-    "bridgeCount": 6,
+    "fileCount": 19,
+    "moduleCount": 7,
+    "boundaryFileCount": 16,
+    "bridgeCount": 7,
     "flowCount": 3,
     "modules": [
-      "hooks:gateway(10f,3b)",
+      "hooks:gateway(11f,4b)",
       "hooks/band:gateway(3f,2b)",
       "scripts:gateway(1f,1b)",
       ".github/workflows:pipeline(1f,0b)",
       ".opencode:persistence(1f,0b)",
+      ".crew:core(1f,0b)",
       "pi-extension:core(1f,0b)"
     ],
     "flows": [

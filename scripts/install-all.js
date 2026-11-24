@@ -10,19 +10,30 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const {
+  getCrewConfigDir,
+  getPersonasRegistryDir,
+  getPresenceLogPath,
+  validatePersonaDescriptor,
+} = require('../hooks/ensemble');
 
 const ROOT = path.resolve(__dirname, '..');
 const REPO_SLUG = 'openasocket/NeckBeard';
 const REPO_URL = 'https://github.com/openasocket/NeckBeard';
+const PERSONA_MANIFEST_FILE = path.join(ROOT, 'crew-persona.json');
+const MAX_PRESENCE_LINE_BYTES = 4096;
 
 const SYNC_ITEMS = [
   'AGENTS.md',
   'README.md',
   'INSTALL.md',
+  'SPEC.md',
   'LICENSE',
+  'crew-persona.json',
   'package.json',
   'plugin.json',
   'gemini-extension.json',
+  '.crew',
   '.claude-plugin',
   '.codex-plugin',
   '.github',
@@ -152,7 +163,7 @@ function syncClaudeCode(binPath, home, version, commitSha, opts) {
       for (const sub of fs.readdirSync(cacheParent)) {
         const subPath = path.join(cacheParent, sub);
         if (sub !== version && fs.statSync(subPath).isDirectory()) {
-          copyTreeFiltered(ROOT, subPath);
+          fs.rmSync(subPath, { recursive: true, force: true });
         }
       }
     }
@@ -236,7 +247,7 @@ function syncCodex(binPath, home, version, opts) {
       for (const sub of fs.readdirSync(cacheParent)) {
         const subPath = path.join(cacheParent, sub);
         if (sub !== version && fs.statSync(subPath).isDirectory()) {
-          copyTreeFiltered(ROOT, subPath);
+          fs.rmSync(subPath, { recursive: true, force: true });
         }
       }
     }
@@ -277,12 +288,16 @@ function syncCodex(binPath, home, version, opts) {
   return { harness: 'OpenAI Codex', detected: true, binary: binPath || codexRoot, action: actions.join(' · ') || `updated to v${version}` };
 }
 
-// Safely merges a plugin ID into the single `[plugins]` `enabled = [...]` array in Grok's config.toml,
+// Safely merges a validated plugin ID (^[a-z0-9-]+$) into the single `[plugins]` `enabled = [...]` array in Grok's config.toml,
 // supporting both single-line and multi-line arrays and collapsing any duplicate `enabled = [...]` blocks.
 function mergeGrokEnabledPluginsToml(tomlContent, pluginId) {
+  const safeId = String(pluginId || '').trim();
+  if (!/^[a-z0-9-]+$/.test(safeId)) {
+    throw new Error(`Invalid Grok plugin ID "${safeId}": must match ^[a-z0-9-]+$`);
+  }
   const text = String(tomlContent || '');
   if (!/^\[plugins\]\s*$/m.test(text)) {
-    return text.trimEnd() + `\n\n[plugins]\nenabled = ["${pluginId}"]\n`;
+    return text.trimEnd() + `\n\n[plugins]\nenabled = ["${safeId}"]\n`;
   }
 
   const lines = text.split('\n');
@@ -310,7 +325,7 @@ function mergeGrokEnabledPluginsToml(tomlContent, pluginId) {
     }
   }
 
-  collected.add(pluginId);
+  collected.add(safeId);
   const formattedArray = `enabled = [${[...collected].map((p) => `"${p}"`).join(', ')}]`;
 
   const out = [];
@@ -484,6 +499,85 @@ function syncPiAndOpenCode(bins, home, version, opts) {
   return results;
 }
 
+// §4.5 Atomic Drop-In Presence Registration:
+// Reads & validates crew-persona.json, then unless --dry-run atomically writes ONLY
+// $CREW_CONFIG_DIR/registry/personas/neckbeard.json and appends one <4096B LF-only
+// presence record to $CREW_CONFIG_DIR/registry/presence.jsonl.
+function registerPersonaPresence(options = {}) {
+  const env = options.env || process.env;
+  const dryRun = Boolean(options.dryRun);
+  const manifestPath = options.manifestPath || PERSONA_MANIFEST_FILE;
+
+  const rawManifest = fs.readFileSync(manifestPath, 'utf8');
+  const validated = validatePersonaDescriptor(rawManifest, { fromRegistry: false });
+  if (!validated.valid) {
+    throw new Error(`Invalid crew-persona.json: ${validated.reason}`);
+  }
+  const manifestObj = JSON.parse(rawManifest);
+  const desc = validated.descriptor;
+
+  const crewDir = getCrewConfigDir(env);
+  const personasDir = getPersonasRegistryDir(env);
+  const targetPath = path.join(personasDir, `${desc.id}.json`);
+  const presencePath = getPresenceLogPath(env);
+
+  if (dryRun) {
+    return {
+      registered: false,
+      dryRun: true,
+      id: desc.id,
+      crewConfigDir: crewDir,
+      targetPath,
+      presencePath,
+      action: `would register ${targetPath} + append ${presencePath}`,
+    };
+  }
+
+  // Reject symlink escape on existing registry dir or target file
+  for (const checkPath of [crewDir, path.join(crewDir, 'registry'), personasDir, targetPath, presencePath]) {
+    try {
+      const st = fs.lstatSync(checkPath);
+      if (st.isSymbolicLink()) {
+        throw new Error(`Refusing symlink target in Crew registry: ${checkPath}`);
+      }
+    } catch (err) {
+      if (err && /Refusing symlink/.test(err.message)) throw err;
+    }
+  }
+
+  fs.mkdirSync(personasDir, { recursive: true, mode: 0o700 });
+  const serialized = JSON.stringify(manifestObj, null, 2) + '\n';
+  const tmpFile = `${targetPath}.${process.pid}.${Date.now().toString(36)}.tmp`;
+  fs.writeFileSync(tmpFile, serialized, { mode: 0o600 });
+  fs.renameSync(tmpFile, targetPath);
+
+  const presenceRecord = {
+    tsIso: new Date().toISOString(),
+    event: 'installed',
+    id: desc.id,
+    handle: desc.handle,
+    version: desc.version,
+    pipelinePriority: desc.pipelinePriority,
+    storeFile: desc.storeFile,
+  };
+  const presenceLine = JSON.stringify(presenceRecord).replace(/\r/g, '') + '\n';
+  if (Buffer.byteLength(presenceLine, 'utf8') >= MAX_PRESENCE_LINE_BYTES) {
+    throw new Error(`Presence event exceeds < ${MAX_PRESENCE_LINE_BYTES} UTF-8 bytes`);
+  }
+  fs.appendFileSync(presencePath, presenceLine, { encoding: 'utf8', mode: 0o600 });
+
+  return {
+    registered: true,
+    dryRun: false,
+    id: desc.id,
+    crewConfigDir: crewDir,
+    targetPath,
+    presencePath,
+    event: presenceRecord,
+    action: `registered ${targetPath}`,
+  };
+}
+
 function syncAllHarnesses(options = {}) {
   const env = options.env || process.env;
   const dryRun = Boolean(options.dryRun);
@@ -526,6 +620,8 @@ function syncAllHarnesses(options = {}) {
     ...syncPiAndOpenCode(bins, home, version, opts),
   ];
 
+  const presence = registerPersonaPresence({ env, dryRun });
+
   let dashboardFile = '';
   if (!dryRun && !options.skipDashboard) {
     try {
@@ -540,6 +636,7 @@ function syncAllHarnesses(options = {}) {
     platform: `${process.platform} (${os.arch()})`,
     dryRun,
     dashboardFile,
+    presence,
     results,
   };
 }
@@ -557,6 +654,9 @@ function formatSyncReport(report) {
   lines.push('─'.repeat(86));
   const updatedCount = report.results.filter((r) => r.detected).length;
   lines.push(`  Harnesses updated : ${updatedCount} / ${report.results.length} compatible agent harnesses detected`);
+  if (report.presence && report.presence.targetPath) {
+    lines.push(`  Crew Registry     : ${report.presence.action}`);
+  }
   if (report.dashboardFile) {
     lines.push(`  Command Center    : ${report.dashboardFile}`);
   }
@@ -580,6 +680,7 @@ if (require.main === module) {
 module.exports = {
   findBinaryOnPath,
   mergeGrokEnabledPluginsToml,
+  registerPersonaPresence,
   syncAllHarnesses,
   formatSyncReport,
 };

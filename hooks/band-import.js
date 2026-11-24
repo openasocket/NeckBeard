@@ -1451,11 +1451,15 @@ function collectAndBuild(cwd = process.cwd(), env = process.env) {
   for (const wsPath of discoveredWorkspacePaths.values()) {
     parentCandidates.add(path.dirname(wsPath));
   }
+  const tmpRoots = [os.tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'].map((r) => path.resolve(r));
   for (const parentDir of parentCandidates) {
     if (!parentDir || parentDir === '/' || parentDir === os.homedir()) continue;
+    const resolvedParent = path.resolve(parentDir);
+    if (tmpRoots.some((tr) => resolvedParent === tr || resolvedParent.startsWith(tr + path.sep))) continue;
     let children = [];
     try { children = fs.readdirSync(parentDir, { withFileTypes: true }); } catch { continue; }
     for (const child of children) {
+      if (discoveredWorkspacePaths.size >= 60) break;
       if (!child.isDirectory() || child.name.startsWith('.')) continue;
       const fullChild = path.join(parentDir, child.name);
       if (!discoveredWorkspacePaths.has(child.name) && (hasVibes(fullChild) || isProjectDirectory(fullChild))) {

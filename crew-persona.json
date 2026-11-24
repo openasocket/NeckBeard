@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "neckbeard",
+  "handle": "NeckBeard",
+  "version": "0.3.5",
+  "kind": "universal",
+  "squad": "build",
+  "pipelinePriority": 40,
+  "storeFile": ".neckbeard.json",
+  "wireEnvelope": "[NECKBEARD-GATE]",
+  "alterEgos": [
+    {
+      "id": "larry",
+      "name": "Ashy Larry"
+    },
+    {
+      "id": "lari",
+      "name": "Ashy Lari"
+    }
+  ],
+  "themePosture": "dark-only",
+  "gates": [
+    "Safe",
+    "Fast@Load",
+    "Done"
+  ],
+  "pushbackDomain": "Unvalidated trust boundaries, O(n^2) / unbounded memory bottlenecks at named load, unfinished error paths",
+  "skills": [
+    "neckbeard",
+    "neckbeard-audit",
+    "neckbeard-debt",
+    "neckbeard-gain",
+    "neckbeard-map",
+    "neckbeard-memory",
+    "neckbeard-review"
+  ],
+  "memoryNamespace": "memory/agents/neckbeard",
+  "enclaveAware": true,
+  "installerScript": "scripts/install-all.js"
+}

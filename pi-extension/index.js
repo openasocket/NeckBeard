@@ -130,7 +130,7 @@ export default function registerNeckbeardPi(host) {
     },
   });
 
-  for (const skillCmd of ['neckbeard-review', 'neckbeard-audit', 'neckbeard-debt', 'neckbeard-gain', 'neckbeard-map']) {
+  for (const skillCmd of ['neckbeard-review', 'neckbeard-audit', 'neckbeard-debt', 'neckbeard-gain', 'neckbeard-map', 'neckbeard-memory']) {
     host.registerCommand(skillCmd, {
       description: skillCmd === 'neckbeard-audit' ? 'Run /skill:neckbeard-audit [lite|complete]' : `Run /skill:${skillCmd}`,
       getArgumentCompletions:

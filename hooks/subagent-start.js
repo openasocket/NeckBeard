@@ -6,6 +6,7 @@
 const { readInput, readLevel, emitContext, rules, detectCrewEnsemble, formatEnsembleRules } = require('./lib');
 const { ensureFreshBoundaryMap, formatProjectContext } = require('./surface');
 const { hasVibes, formatVibesContext } = require('./vibes');
+const { formatCompactMemoryDigest } = require('./memory');
 
 (async () => {
   if (process.env.NECKBEARD_SUBAGENTS === '0') return;
@@ -26,6 +27,10 @@ const { hasVibes, formatVibesContext } = require('./vibes');
       const vibes = formatVibesContext(cwd);
       if (vibes) text += '\n\n' + vibes;
     }
+  } catch { /* best-effort */ }
+  try {
+    const memDigest = formatCompactMemoryDigest({}, process.env);
+    if (memDigest) text += '\n\n' + memDigest;
   } catch { /* best-effort */ }
 
   emitContext('SubagentStart', text);

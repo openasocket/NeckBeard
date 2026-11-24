@@ -1,6 +1,6 @@
 {
   "name": "neckbeard",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.",
   "skills": "skills/"
 }

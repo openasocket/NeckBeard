@@ -154,6 +154,46 @@ test('core ruleset parity, line limits, required sentences, and forbidden terms'
     assert.ok(agents.includes(line), `AGENTS.md missing: ${line}`);
   }
 
+  // Crew Operational Upgrade contracts (Verbatim Output Proof, INV-LLM-06, INV-LLM-07)
+  for (const token of [
+    '[NECKBEARD-DONE]',
+    'verbatim',
+    'exit code',
+    'prose summaries alone fail',
+    'INV-LLM-06',
+    'CREW_PORT_BASE',
+    'CREW_DB_PATH',
+    'CREW_TMP_DIR',
+    '[PROPELLERHEAD-SPEC]',
+    'filesOutOfScope',
+    'INV-LLM-07',
+    'neckbeard-reviewer',
+    'EdgeLord',
+    '>= 2',
+    'max 3 rounds',
+  ]) {
+    assert.ok(agents.includes(token), `AGENTS.md missing operational contract token: ${token}`);
+    assert.ok(skillRaw.includes(token), `skills/neckbeard/SKILL.md missing operational contract token: ${token}`);
+  }
+
+  for (const agentDoc of ['agents/neckbeard.md', 'agents/neckbeard-reviewer.md', 'docs/crew-protocol.md']) {
+    const text = readText(agentDoc);
+    for (const token of [
+      '[NECKBEARD-DONE',
+      'verbatim',
+      'exit code',
+      'INV-LLM-06',
+      'CREW_PORT_BASE',
+      'CREW_DB_PATH',
+      'CREW_TMP_DIR',
+      'filesOutOfScope',
+      'INV-LLM-07',
+      'max 3 rounds',
+    ]) {
+      assert.ok(text.includes(token), `${agentDoc} missing operational contract token: ${token}`);
+    }
+  }
+
   const forbidden = [
     'the guard',
     'CLAUDE_PLUGIN_ROOT',
@@ -188,6 +228,25 @@ test('review, audit, and copilot instructions content', () => {
   assert.match(review, /print the findings/i);
   assert.match(review, /does not set the process exit code/i);
   assert.ok(!review.includes('skip conversational prose'));
+  for (const token of [
+    'Pasted, Not Summarized',
+    '[NECKBEARD-DONE]',
+    'verbatim',
+    'exit code',
+    'INV-LLM-06',
+    'CREW_PORT_BASE',
+    'CREW_DB_PATH',
+    'CREW_TMP_DIR',
+    'filesOutOfScope',
+    'INV-LLM-07',
+    'neckbeard-reviewer',
+    'EdgeLord',
+    '>= 2',
+    'max 3 rounds',
+    '[CREW-PUSHBACK]',
+  ]) {
+    assert.ok(review.includes(token), `skills/neckbeard-review/SKILL.md missing: ${token}`);
+  }
 
   const audit = readText('skills/neckbeard-audit/SKILL.md');
   assert.ok(audit.trimEnd().split('\n').length <= 90, 'neckbeard-audit must be <= 90 lines');

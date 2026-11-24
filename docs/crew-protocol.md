@@ -219,9 +219,14 @@ Invariant required: sanitizeArchitecture must reject .env paths, unknown roles, 
 ```
 
 ### 3.3 `NeckBeard` (Ashy Larry/Lari) $\rightarrow$ Implementation / 3-Gate Review Envelope
+`[NECKBEARD-DONE]` and the `Done` gate require **raw verbatim test/command stdout and exit code** from the thread's isolated worktree (prose summaries alone fail). Unattended Autopilot executes strictly inside isolated worktrees with dedicated `CREW_PORT_BASE`, `CREW_DB_PATH`, and `CREW_TMP_DIR` allocations while obeying `[PROPELLERHEAD-SPEC]` `filesOutOfScope` fences (`INV-LLM-06`). Prefer cross-model-family `neckbeard-reviewer` / `EdgeLord` review whenever `>= 2` model families are available, and halt builder↔reviewer loops at max 3 rounds for `[CREW-PUSHBACK]` escalation (`INV-LLM-07`).
 ```text
-[NECKBEARD-DONE id=VAL-01 files=hooks/surface.js,hooks/band-import.js,hooks/band/dashboard.ts,test/hooks.test.js hostile_test=test/hooks.test.js drift=0]
+[NECKBEARD-DONE id=VAL-01 files=hooks/surface.js,hooks/band-import.js,hooks/band/dashboard.ts,test/hooks.test.js hostile_test=test/hooks.test.js drift=0 exit=0]
 Implemented buildArchitectureMap and sanitizeArchitecture using existing listFiles and readHead helpers; added hostile-input test for .env and self-loop flows.
+Command: node --test test/hooks.test.js
+Stdout (verbatim):
+✔ surface map lists file paths by category, never code
+ℹ pass 27 | fail 0 (exit 0)
 
 Load assumed: 5,000 local sessions across 60 workspaces, p95 hook latency < 50ms.
 Not checked: Python/Go relative package import resolution.

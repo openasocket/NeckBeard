@@ -85,9 +85,11 @@ At `full` and `paranoid` levels, `hooks/guard.js` enforces:
 - Regulated compartments (`cmmc`, `finsec`, `hipaa`) stay strictly under `$CREW_CONFIG_DIR/enclaves/<enclave-id>/`.
 - Inspector CLI & `/neckbeard-memory` skill expose `inspect`, `pin`, `unpin`, `edit`, `forget`, and `reset`.
 
-### 3.4 Token Budget & Interop Envelopes
+### 3.4 Token Budget, Execution Discipline & Interop Envelopes
 - `AGENTS.md` `<= 110` lines; solo empty `hooks/session-start.js` stdout `<= 1,100` tokens.
-- Supports `[NECKBEARD-GATE]`, `[CREW-PUSHBACK]`, and `[CREW-SYNC]` wire envelopes and `.crew/sparks.yaml` (`crew spark`) with optional `.maestro/cue.yaml` read-fallback note.
+- Supports `[NECKBEARD-GATE]`, `[NECKBEARD-DONE]`, `[CREW-PUSHBACK]`, and `[CREW-SYNC]` wire envelopes and `.crew/sparks.yaml` (`crew spark`) with optional `.maestro/cue.yaml` read-fallback note.
+- **Verbatim Output Proof (`Pasted, Not Summarized`):** `[NECKBEARD-DONE]` and the `Done` gate require raw verbatim worktree command stdout and exit code; prose summaries alone fail.
+- **Worktree Autopilot & Bounded Cross-Family Review (`INV-LLM-06`, `INV-LLM-07`):** Unattended Autopilot runs strictly inside isolated worktrees with dedicated `CREW_PORT_BASE`, `CREW_DB_PATH`, and `CREW_TMP_DIR` allocations while respecting `[PROPELLERHEAD-SPEC]` `filesOutOfScope` fences. Recommend cross-model-family `neckbeard-reviewer` / `EdgeLord` review whenever `>= 2` model families exist and halt builder↔reviewer loops at max 3 rounds for escalation.
 
 ---
 

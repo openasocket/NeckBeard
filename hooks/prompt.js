@@ -83,8 +83,8 @@ function handleSubcommand(cmd, cwd) {
   }
 
   if (cmd.action === 'crew') {
-    const crewSummary = formatCrewContext(cwd) || 'No sibling Crew stores (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json) initialized in this workspace yet.';
-    return `NECKBEARD (Ashy Larry / Ashy Lari) 5-Character Crew Status:\n${crewSummary}\n\n${formatProjectContext(cwd)}`;
+    const crewSummary = formatCrewContext(cwd) || 'No sibling Crew Universe stores (.headhoncho.json, .rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json, etc.) initialized in this workspace yet.';
+    return `NECKBEARD (Ashy Larry / Ashy Lari) Crew Universe Status:\n${crewSummary}\n\n${formatProjectContext(cwd)}`;
   }
 
   if (cmd.action === 'share') {

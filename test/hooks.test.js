@@ -517,8 +517,13 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   assert.ok(formattedArchCtx.includes('Arch Map ['), 'formatProjectContext includes Arch Map summary');
   assert.ok(formattedArchCtx.includes('flows:'), 'formatProjectContext includes inter-module data flows');
 
-  // Verify 5-Character Crew peer store reading, inbox proposal censorship, and PreToolUse crew store guard
+  // Verify 13-Persona Crew Universe peer store reading, inbox proposal censorship, and PreToolUse crew store guard
   const crewDir = tmpState();
+  fs.writeFileSync(path.join(crewDir, '.headhoncho.json'), JSON.stringify({
+    shared: true,
+    mode: 'acting-ceo',
+    decisions: [{ id: 'D-1' }, { id: 'D-2' }],
+  }));
   fs.writeFileSync(path.join(crewDir, '.rainmaker.json'), JSON.stringify({
     shared: true,
     persona: 'valentino',
@@ -531,6 +536,15 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
     activeInvariant: 'Escape inline script newlines as \\\\n',
     activeSlice: 'SLICE-1: surface.js',
   }));
+  fs.writeFileSync(path.join(crewDir, '.hipster.json'), JSON.stringify({ shared: true, glassStatus: 'verified-live-dom' }));
+  fs.writeFileSync(path.join(crewDir, '.edgelord.json'), JSON.stringify({ shared: true, openFaults: 2, openBreaches: 0 }));
+  fs.writeFileSync(path.join(crewDir, '.infrasmith.json'), JSON.stringify({ shared: true, rollbackReady: true }));
+  fs.writeFileSync(path.join(crewDir, '.storyteller.json'), JSON.stringify({ shared: true, activeCampaign: 'v0.4-launch' }));
+  fs.writeFileSync(path.join(crewDir, '.cloutchaser.json'), JSON.stringify({ shared: true, safeToPublish: true }));
+  fs.writeFileSync(path.join(crewDir, '.userchamp.json'), JSON.stringify({ shared: true, reproVerified: true }));
+  fs.writeFileSync(path.join(crewDir, '.redline.json'), JSON.stringify({ shared: true, policyStatus: 'PASS' }));
+  fs.writeFileSync(path.join(crewDir, '.measureup.json'), JSON.stringify({ shared: true, marginStatus: 'GREEN' }));
+  fs.writeFileSync(path.join(crewDir, '.dealmaker.json'), JSON.stringify({ shared: true, pipelineStatus: 'Q4-ready' }));
   surfaceMod.appendCrewInboxProposal(crewDir, {
     id: 'nb-test-1',
     persona: 'larry',
@@ -539,11 +553,24 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
     ePatch: '10m (5 LOC)',
     summary: 'Sanitize crew inbox proposals at edge https://internal.corp/secret',
   });
+  assert.strictEqual(Object.keys(surfaceMod.CREW_PEER_FILES).length, 12);
+  const { peers: loadedPeers } = surfaceMod.readCrewPeerStores(crewDir);
+  assert.strictEqual(Object.keys(loadedPeers).length, 12);
   const crewCtx = surfaceMod.formatCrewContext(crewDir);
   assert.match(crewCtx, /Crew Peers \[active\]/);
+  assert.match(crewCtx, /HeadHoncho\(Mike\): mode=acting-ceo \(2 decisions\)/);
   assert.match(crewCtx, /RainMaker\(Val\): Deliver 1-click multi-workspace ROI export/);
   assert.match(crewCtx, /\(1 inbox\)/);
   assert.match(crewCtx, /PropellerHead\(Danny\):/);
+  assert.match(crewCtx, /Hipster\(Sammy\): verified-live-dom/);
+  assert.match(crewCtx, /EdgeLord\(Ronnie\): 2 open breach\(es\)/);
+  assert.match(crewCtx, /InfraSmith\(Zack\): rollback=OK/);
+  assert.match(crewCtx, /StoryTeller\(Nate\): v0\.4-launch/);
+  assert.match(crewCtx, /CloutChaser\(Vic\): publish=OK/);
+  assert.match(crewCtx, /UserChamp\(Ray\): repro=YES/);
+  assert.match(crewCtx, /RedLine\(Jules\): policy=PASS/);
+  assert.match(crewCtx, /MeasureUp\(Dave\): margin=GREEN/);
+  assert.match(crewCtx, /DealMaker\(Quinn\): Q4-ready/);
   const inboxRaw = fs.readFileSync(path.join(crewDir, '.rainmaker-inbox.jsonl'), 'utf8');
   assert.ok(!inboxRaw.includes('https://internal.corp'), 'appendCrewInboxProposal censors URLs');
   assert.ok(
@@ -555,38 +582,121 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
     null,
     'PreToolUse guard allows clean .propellerhead.json'
   );
+  // PreToolUse guard covers all 8 new expansion sibling stores on Write, Edit, and MultiEdit
+  const expansionStores = [
+    '.headhoncho.json',
+    '.infrasmith.json',
+    '.storyteller.json',
+    '.cloutchaser.json',
+    '.userchamp.json',
+    '.redline.json',
+    '.measureup.json',
+    '.dealmaker.json',
+  ];
+  for (const storeFile of expansionStores) {
+    assert.match(
+      check('Write', { file_path: storeFile, content: '{"note":"leak https://evil.internal.corp"}' }, 'full'),
+      /crew store/,
+      `PreToolUse guard blocks URL in ${storeFile}`
+    );
+    assert.match(
+      check('Write', { file_path: `subdir/${storeFile}`, content: 'not-valid-json' }, 'full'),
+      /invalid JSON/,
+      `PreToolUse guard blocks invalid JSON in ${storeFile}`
+    );
+    assert.match(
+      check('Edit', { file_path: storeFile, new_string: '"endpoint": "10.0.0.42"' }, 'full'),
+      /crew store/,
+      `PreToolUse guard blocks IP address on Edit in ${storeFile}`
+    );
+    assert.match(
+      check('MultiEdit', { file_path: storeFile, edits: [{ new_string: '"ok": true' }, { new_string: '"owner": "ceo@corp.example"' }] }, 'full'),
+      /crew store/,
+      `PreToolUse guard blocks email on MultiEdit in ${storeFile}`
+    );
+    assert.strictEqual(
+      check('Write', { file_path: storeFile, content: '{"shared":true,"status":"ok"}' }, 'full'),
+      null,
+      `PreToolUse guard allows clean Write to ${storeFile}`
+    );
+    assert.strictEqual(
+      check('Edit', { file_path: storeFile, new_string: '"status": "armed"' }, 'full'),
+      null,
+      `PreToolUse guard allows clean partial Edit to ${storeFile}`
+    );
+  }
 
-  // Verify Option A (Smart Singleton vs. Multi-Peer Ensemble Coexistence) & multi-harness TOML/JSON coexistence sync
-  const { detectCrewEnsemble, formatEnsembleRules } = require('../hooks/lib');
+  // Verify 13-Persona Smart Singleton vs. Multi-Peer Ensemble Coexistence & multi-harness TOML/JSON coexistence sync
+  const {
+    CREW_PIPELINE_ORDER,
+    CREW_STORE_FILES,
+    getHomeDir,
+    detectCrewEnsemble,
+    formatEnsembleRules,
+  } = require('../hooks/ensemble');
+
+  const CANONICAL_13 = [
+    'headhoncho',
+    'rainmaker',
+    'propellerhead',
+    'neckbeard',
+    'hipster',
+    'edgelord',
+    'infrasmith',
+    'storyteller',
+    'cloutchaser',
+    'userchamp',
+    'redline',
+    'measureup',
+    'dealmaker',
+  ];
+  assert.deepStrictEqual(CREW_PIPELINE_ORDER, CANONICAL_13);
+  assert.strictEqual(Object.keys(CREW_STORE_FILES).length, 13);
+  for (const id of CANONICAL_13) {
+    assert.strictEqual(CREW_STORE_FILES[id], `.${id}.json`);
+  }
+  assert.strictEqual(getHomeDir({ HOME: '/tmp/nb-home' }), '/tmp/nb-home');
+
+  function isolatedEnv(homeDir, extra = {}) {
+    return {
+      HOME: homeDir,
+      USERPROFILE: homeDir,
+      XDG_CONFIG_HOME: path.join(homeDir, '.config'),
+      CLAUDE_CONFIG_DIR: '',
+      CODEX_HOME: '',
+      COPILOT_HOME: '',
+      CREW_SOLO_PERSONA: '',
+      ...extra,
+    };
+  }
 
   // 1. Singleton mode (isolated fake HOME, or CREW_SOLO_PERSONA=neckbeard)
   const soloHome = tmpState();
   const soloWs = tmpState();
   fs.writeFileSync(path.join(soloWs, '.rainmaker.json'), JSON.stringify({ shared: true, activeOutcome: 'Ship solo outcome' }));
-  const soloInfo = detectCrewEnsemble('neckbeard', soloWs, { HOME: soloHome, CREW_SOLO_PERSONA: 'neckbeard' });
+  const soloInfo = detectCrewEnsemble('neckbeard', soloWs, isolatedEnv(soloHome, { CREW_SOLO_PERSONA: 'neckbeard' }));
   assert.strictEqual(soloInfo.isEnsemble, false);
   assert.strictEqual(soloInfo.isEnsembleLeader, true);
   assert.deepStrictEqual(soloInfo.installedPeers, ['neckbeard']);
   const soloSessionCtx = run('session-start.js', { session_id: 'SOLO-1', source: 'startup', cwd: soloWs }, {
     NECKBEARD_STATE_DIR: tmpState(),
-    HOME: soloHome,
-    CREW_SOLO_PERSONA: 'neckbeard',
+    ...isolatedEnv(soloHome, { CREW_SOLO_PERSONA: 'neckbeard' }),
   }).hookSpecificOutput.additionalContext;
   assert.ok(soloSessionCtx.includes('End every reply with the load assumed'), 'Singleton keeps exact solo footer mandate');
-  assert.ok(!soloSessionCtx.includes('[5-Character Crew Ensemble Active'), 'Singleton omits ensemble banner');
+  assert.ok(!soloSessionCtx.includes('[Crew Universe Ensemble Active'), 'Singleton omits ensemble banner');
   assert.ok(soloSessionCtx.includes('Crew Peers [active]'), 'Singleton emits Crew Peers when solo/leader');
 
-  // 2. Non-leader Ensemble mode (rainmaker + neckbeard both installed -> rainmaker leads pipeline order)
+  // 2. Non-leader Ensemble mode (rainmaker + neckbeard both installed, no headhoncho -> rainmaker leads pipeline order)
   const ensHome = tmpState();
   fs.mkdirSync(path.join(ensHome, '.claude', 'plugins', 'marketplaces', 'rainmaker'), { recursive: true });
   fs.mkdirSync(path.join(ensHome, '.claude', 'plugins', 'marketplaces', 'neckbeard'), { recursive: true });
-  const ensInfo = detectCrewEnsemble('neckbeard', soloWs, { HOME: ensHome });
+  const ensInfo = detectCrewEnsemble('neckbeard', soloWs, isolatedEnv(ensHome));
   assert.strictEqual(ensInfo.isEnsemble, true);
   assert.strictEqual(ensInfo.isEnsembleLeader, false);
   assert.strictEqual(ensInfo.leaderId, 'rainmaker');
   const ensSubCtx = run('subagent-start.js', { session_id: 'ENS-SUB', cwd: soloWs }, {
     NECKBEARD_STATE_DIR: tmpState(),
-    HOME: ensHome,
+    ...isolatedEnv(ensHome),
   }).hookSpecificOutput.additionalContext;
   assert.ok(
     ensSubCtx.includes('When acting as the lead specialist for this domain (or when invoked directly via its slash command / subagent), end your reply with the load assumed'),
@@ -595,22 +705,84 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   assert.ok(!ensSubCtx.includes('End every reply with the load assumed'), 'Ensemble removes unconditional footer demand');
   assert.ok(!ensSubCtx.includes('Crew Peers [active]'), 'Non-leader suppresses duplicate Crew Peers line');
 
-  // 3. Leader Ensemble mode (neckbeard + hipster -> neckbeard leads pipeline order)
+  // 2b. HeadHoncho elects as leader ahead of RainMaker and NeckBeard
+  const hhHome = tmpState();
+  const hhWs = tmpState();
+  fs.mkdirSync(path.join(hhHome, '.claude', 'plugins', 'marketplaces', 'headhoncho'), { recursive: true });
+  fs.mkdirSync(path.join(hhHome, '.claude', 'plugins', 'marketplaces', 'rainmaker'), { recursive: true });
+  fs.mkdirSync(path.join(hhHome, '.claude', 'plugins', 'marketplaces', 'neckbeard'), { recursive: true });
+  const hhAsRainmaker = detectCrewEnsemble('rainmaker', hhWs, isolatedEnv(hhHome));
+  assert.strictEqual(hhAsRainmaker.isEnsemble, true);
+  assert.strictEqual(hhAsRainmaker.leaderId, 'headhoncho');
+  assert.strictEqual(hhAsRainmaker.isEnsembleLeader, false);
+  assert.deepStrictEqual(hhAsRainmaker.installedPeers, ['headhoncho', 'rainmaker', 'neckbeard']);
+  const hhAsHeadHoncho = detectCrewEnsemble('headhoncho', hhWs, isolatedEnv(hhHome));
+  assert.strictEqual(hhAsHeadHoncho.isEnsembleLeader, true);
+  assert.strictEqual(hhAsHeadHoncho.leaderId, 'headhoncho');
+  const hhAsNeckbeard = detectCrewEnsemble('neckbeard', hhWs, isolatedEnv(hhHome));
+  assert.strictEqual(hhAsNeckbeard.leaderId, 'headhoncho');
+  assert.strictEqual(hhAsNeckbeard.isEnsembleLeader, false);
+  assert.ok(
+    formatEnsembleRules('End every reply with governance summary.', hhAsHeadHoncho).includes('[Crew Universe Ensemble Active: headhoncho -> rainmaker -> neckbeard]'),
+    'HeadHoncho leader emits canonical 13-persona ensemble header'
+  );
+
+  // 3. Leader Ensemble mode (neckbeard + hipster + downstream expansion personas -> neckbeard leads pipeline order)
   const leadHome = tmpState();
   const leadWs = tmpState();
   fs.mkdirSync(path.join(leadHome, '.claude', 'plugins', 'marketplaces', 'neckbeard'), { recursive: true });
   fs.mkdirSync(path.join(leadHome, '.codex', 'plugins', 'cache', 'hipster'), { recursive: true });
+  fs.mkdirSync(path.join(leadHome, '.copilot', 'installed-plugins', 'infrasmith@infrasmith'), { recursive: true });
+  fs.mkdirSync(path.join(leadHome, '.gemini', 'extensions', 'redline'), { recursive: true });
   fs.writeFileSync(path.join(leadWs, '.hipster.json'), JSON.stringify({ shared: true, activeFlow: 'Verify live DOM' }));
-  const leadInfo = detectCrewEnsemble('neckbeard', leadWs, { HOME: leadHome });
+  fs.writeFileSync(path.join(leadWs, '.dealmaker.json'), JSON.stringify({ shared: true, pipelineStatus: 'Q4-ready' }));
+  const leadInfo = detectCrewEnsemble('neckbeard', leadWs, isolatedEnv(leadHome));
   assert.strictEqual(leadInfo.isEnsemble, true);
   assert.strictEqual(leadInfo.isEnsembleLeader, true);
   assert.strictEqual(leadInfo.leaderId, 'neckbeard');
+  assert.deepStrictEqual(leadInfo.installedPeers, ['neckbeard', 'hipster', 'infrasmith', 'redline', 'dealmaker']);
   const leadSessCtx = run('session-start.js', { session_id: 'ENS-LEAD', source: 'startup', cwd: leadWs }, {
     NECKBEARD_STATE_DIR: tmpState(),
-    HOME: leadHome,
+    ...isolatedEnv(leadHome),
   }).hookSpecificOutput.additionalContext;
-  assert.ok(leadSessCtx.includes('[5-Character Crew Ensemble Active: neckbeard -> hipster]'), 'Leader emits ensemble header');
+  assert.ok(
+    leadSessCtx.includes('[Crew Universe Ensemble Active: neckbeard -> hipster -> infrasmith -> redline -> dealmaker]'),
+    'Leader emits Crew Universe ensemble header'
+  );
   assert.ok(leadSessCtx.includes('Crew Peers [active]'), 'Leader emits Crew Peers summary once');
+
+  // 3b. Full 13-persona coexistence across all 8 harnesses + repo stores, plus Claude disabled plugin respect
+  const fullHome = tmpState();
+  const fullWs = tmpState();
+  fs.mkdirSync(path.join(fullHome, '.claude', 'plugins', 'marketplaces', 'headhoncho'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.claude', 'plugins', 'cache', 'rainmaker'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.codex', 'plugins', 'cache', 'propellerhead'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.copilot', 'plugins', 'neckbeard'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.grok', 'installed-plugins', 'hipster-local'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.gemini', 'config', 'plugins', 'edgelord'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.gemini', 'extensions', 'infrasmith'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.pi', 'agent', 'extensions'), { recursive: true });
+  fs.writeFileSync(path.join(fullHome, '.pi', 'agent', 'extensions', 'storyteller.js'), '');
+  fs.mkdirSync(path.join(fullHome, '.omp', 'extensions', 'cloutchaser'), { recursive: true });
+  fs.mkdirSync(path.join(fullHome, '.config', 'opencode', 'plugins'), { recursive: true });
+  fs.writeFileSync(path.join(fullHome, '.config', 'opencode', 'plugins', 'userchamp.mjs'), '');
+  fs.writeFileSync(path.join(fullWs, '.redline.json'), JSON.stringify({ shared: true }));
+  fs.writeFileSync(path.join(fullWs, '.measureup.json'), JSON.stringify({ shared: true }));
+  fs.writeFileSync(path.join(fullWs, '.dealmaker.json'), JSON.stringify({ shared: true }));
+  const fullInfo = detectCrewEnsemble('neckbeard', fullWs, isolatedEnv(fullHome));
+  assert.deepStrictEqual(fullInfo.installedPeers, CANONICAL_13);
+  assert.strictEqual(fullInfo.leaderId, 'headhoncho');
+  assert.strictEqual(fullInfo.isEnsemble, true);
+  assert.strictEqual(fullInfo.isEnsembleLeader, false);
+
+  // Explicitly disabled Claude plugin does not elect as leader
+  fs.writeFileSync(
+    path.join(fullHome, '.claude', 'settings.json'),
+    JSON.stringify({ enabledPlugins: { 'headhoncho@headhoncho': false } })
+  );
+  const disabledHhInfo = detectCrewEnsemble('neckbeard', fullWs, isolatedEnv(fullHome));
+  assert.strictEqual(disabledHhInfo.leaderId, 'rainmaker');
+  assert.ok(!disabledHhInfo.installedPeers.includes('headhoncho'));
 
   // 4. Multi-harness installer coexistence & mergeGrokEnabledPluginsToml
   const multiLineGrok = '[cli]\nauto = true\n\n[plugins]\nenabled = [\n    "propellerhead",\n]\n\n[ui]\nyolo = false\n';

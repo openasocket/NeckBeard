@@ -157,10 +157,11 @@ function rules(level) {
   return `NECKBEARD MODE ACTIVE, level: ${level}. Switch with /neckbeard, $neckbeard, or @neckbeard, then lite, full, paranoid, or off.\n\n${body.trim()}`;
 }
 
-const { detectCrewEnsemble, formatEnsembleRules } = require('./ensemble');
+const { CREW_PIPELINE_ORDER, CREW_STORE_FILES, detectCrewEnsemble, formatEnsembleRules } = require('./ensemble');
 
 module.exports = {
   LEVELS, DEFAULT_LEVEL, normalizeLevel, defaultLevel, stateDir, statePath, readLevel, writeLevel,
   configBase, claudeDir, bandDir, recordGuardBlock, readGuardStats,
-  readInput, emitContext, emitDeny, rules, detectCrewEnsemble, formatEnsembleRules,
+  readInput, emitContext, emitDeny, rules,
+  CREW_PIPELINE_ORDER, CREW_STORE_FILES, detectCrewEnsemble, formatEnsembleRules,
 };

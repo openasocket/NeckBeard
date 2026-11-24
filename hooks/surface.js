@@ -9,18 +9,19 @@ const os = require('os');
 const path = require('path');
 const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
+const { CREW_PIPELINE_ORDER, CREW_STORE_FILES } = require('./ensemble');
 
 const BUDGET = Number(process.env.NECKBEARD_SURFACE_CHARS || 1500);
 const MAP_BUDGET = Number(process.env.NECKBEARD_MAP_CHARS || 1200);
 const DEFAULT_MAP_MAX_AGE_MS = Number(process.env.NECKBEARD_MAP_MAX_AGE_HOURS || 24) * 60 * 60 * 1000;
 
-// Sibling 5-Character Crew repo-local stores and shared PM intake queue.
-const CREW_PEER_FILES = {
-  rainmaker: '.rainmaker.json',
-  propellerhead: '.propellerhead.json',
-  hipster: '.hipster.json',
-  edgelord: '.edgelord.json',
-};
+// Sibling 13-Persona Crew Universe repo-local stores and shared PM intake queue.
+const CREW_PEER_FILES = Object.freeze(
+  CREW_PIPELINE_ORDER.reduce((acc, id) => {
+    if (id !== 'neckbeard') acc[id] = CREW_STORE_FILES[id];
+    return acc;
+  }, {})
+);
 const RAINMAKER_INBOX_FILE = '.rainmaker-inbox.jsonl';
 const MAX_FILES = 3000;
 const MAX_BYTES = 200 * 1024;
@@ -724,7 +725,7 @@ function formatProjectContext(root = process.cwd(), env = process.env, opts = {}
   return lines.join('\n').slice(0, MAP_BUDGET);
 }
 
-// Validates any Crew store JSON (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json) or JSONL (.rainmaker-inbox.jsonl)
+// Validates any 13-Persona Crew Universe store JSON (.{id}.json) or JSONL (.rainmaker-inbox.jsonl)
 // against secrets, URLs, hostnames, IPs, emails, and absolute local paths.
 function checkCrewStoreJson(rawText, fileName = '') {
   const s = String(rawText || '').trim();
@@ -749,7 +750,7 @@ function checkCrewStoreJson(rawText, fileName = '') {
   return null;
 }
 
-// Reads sibling Crew stores (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json, .rainmaker-inbox.jsonl) when present.
+// Reads sibling 13-Persona Crew Universe stores (.{id}.json, .rainmaker-inbox.jsonl) when present.
 function readCrewPeerStores(root = process.cwd()) {
   const peers = {};
   for (const [key, relFile] of Object.entries(CREW_PEER_FILES)) {
@@ -782,6 +783,12 @@ function readCrewPeerStores(root = process.cwd()) {
 function formatCrewContext(root = process.cwd()) {
   const { peers, inboxPending } = readCrewPeerStores(root);
   const parts = [];
+  if (peers.headhoncho) {
+    const hh = peers.headhoncho;
+    const mode = sanitizeLoad(String(hh.mode || hh.posture || 'chief-of-staff')).slice(0, 24);
+    const decisions = Array.isArray(hh.decisions) ? hh.decisions.length : (Number(hh.decisionCount) || 0);
+    parts.push(`HeadHoncho(Mike): mode=${mode} (${decisions} decisions)`);
+  }
   if (peers.rainmaker) {
     const rm = peers.rainmaker;
     const outcome = sanitizeLoad(String(rm.activeOutcome || rm.northStar || 'active')).slice(0, 60);
@@ -803,8 +810,50 @@ function formatCrewContext(root = process.cwd()) {
   }
   if (peers.edgelord) {
     const el = peers.edgelord;
-    const br = Number(el.openBreaches || (Array.isArray(el.breaches) ? el.breaches.length : 0)) || 0;
+    const rawOpen = el.openFaults ?? el.openBreaches ?? (Array.isArray(el.faults) ? el.faults.length : (Array.isArray(el.breaches) ? el.breaches.length : 0));
+    const br = Number(rawOpen) || 0;
     parts.push(`EdgeLord(Ronnie): ${br} open breach(es)`);
+  }
+  if (peers.infrasmith) {
+    const is = peers.infrasmith;
+    const status = is.rollbackReady === false
+      ? 'rollback=NO'
+      : (is.rollbackReady === true ? 'rollback=OK' : sanitizeLoad(String(is.status || is.deployStatus || 'armed')).slice(0, 24));
+    parts.push(`InfraSmith(Zack): ${status}`);
+  }
+  if (peers.storyteller) {
+    const st = peers.storyteller;
+    const status = sanitizeLoad(String(st.status || st.activeCampaign || st.positioning || 'armed')).slice(0, 28);
+    parts.push(`StoryTeller(Nate): ${status}`);
+  }
+  if (peers.cloutchaser) {
+    const cc = peers.cloutchaser;
+    const status = cc.safeToPublish === false
+      ? 'publish=HOLD'
+      : sanitizeLoad(String(cc.status || cc.activeCampaign || (cc.safeToPublish === true ? 'publish=OK' : 'armed'))).slice(0, 28);
+    parts.push(`CloutChaser(Vic): ${status}`);
+  }
+  if (peers.userchamp) {
+    const uc = peers.userchamp;
+    const status = uc.reproVerified === true
+      ? 'repro=YES'
+      : sanitizeLoad(String(uc.status || uc.activeQueue || 'armed')).slice(0, 28);
+    parts.push(`UserChamp(Ray): ${status}`);
+  }
+  if (peers.redline) {
+    const rl = peers.redline;
+    const status = sanitizeLoad(String(rl.policyStatus || rl.status || 'armed')).slice(0, 24);
+    parts.push(`RedLine(Jules): policy=${status}`);
+  }
+  if (peers.measureup) {
+    const mu = peers.measureup;
+    const status = sanitizeLoad(String(mu.marginStatus || mu.status || 'armed')).slice(0, 24);
+    parts.push(`MeasureUp(Dave): margin=${status}`);
+  }
+  if (peers.dealmaker) {
+    const dm = peers.dealmaker;
+    const status = sanitizeLoad(String(dm.pipelineStatus || dm.status || dm.activeCampaign || 'armed')).slice(0, 28);
+    parts.push(`DealMaker(Quinn): ${status}`);
   }
   return parts.length > 0 ? `Crew Peers [active] ${parts.join(' | ')}` : '';
 }

@@ -8,7 +8,13 @@
 
 const path = require('path');
 const { readInput, readLevel, recordGuardBlock, emitDeny } = require('./lib');
-const { checkNeckbeardJson, checkCrewStoreJson } = require('./surface');
+const { CREW_PEER_FILES, RAINMAKER_INBOX_FILE, checkNeckbeardJson, checkCrewStoreJson } = require('./surface');
+
+// All 12 sibling 13-Persona Crew Universe store files plus the shared RainMaker inbox.
+const SIBLING_CREW_STORE_FILES = new Set([
+  ...Object.values(CREW_PEER_FILES),
+  RAINMAKER_INBOX_FILE,
+]);
 
 const SECRETS = [
   ['private key', /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----/],
@@ -119,19 +125,24 @@ function check(tool, input, level) {
   if (!text) return null;
   const where = tool === 'Bash' ? 'this command' : `${(input && (input.file_path || input.notebook_path)) || 'this file'}`;
 
+  const normWhere = tool === 'Bash' ? '' : normalizePosix(where);
+  const baseWhere = normWhere ? path.posix.basename(normWhere) : '';
+
   // Censor check on .neckbeard.json so no URLs, internal hostnames, IPs, or local absolute paths can be written to it.
-  if (tool === 'Write' && /(?:^|[\\/])\.neckbeard\.json$/.test(where)) {
+  if (tool === 'Write' && baseWhere === '.neckbeard.json') {
     const badCfg = checkNeckbeardJson(text);
     if (badCfg) {
       return `neckbeard blocked this Write to .neckbeard.json: ${badCfg}. Use /neckbeard load <value> or /neckbeard map so the file stays strictly censored.`;
     }
   }
 
-  // Censor check on sibling 5-Character Crew stores (.rainmaker.json, .propellerhead.json, .hipster.json, .edgelord.json, .rainmaker-inbox.jsonl).
-  if ((tool === 'Write' || tool === 'Edit') && /(?:^|[\\/])\.(?:rainmaker|propellerhead|hipster|edgelord)\.json$|(?:^|[\\/])\.rainmaker-inbox\.jsonl$/.test(where)) {
-    const badCrew = checkCrewStoreJson(text, where);
+  // Censor check on all 12 sibling Crew Universe stores (.{id}.json) and .rainmaker-inbox.jsonl.
+  if ((tool === 'Write' || tool === 'Edit' || tool === 'MultiEdit') && SIBLING_CREW_STORE_FILES.has(baseWhere)) {
+    const badCrew = tool === 'Write'
+      ? checkCrewStoreJson(text, where)
+      : checkCrewStoreJson(JSON.stringify({ patch: text }), 'patch.json');
     if (badCrew) {
-      return `neckbeard blocked this ${tool} to crew store (${path.basename(where)}): ${badCrew}. Crew stores must never contain secrets, URLs, internal hostnames, IPs, or absolute local paths.`;
+      return `neckbeard blocked this ${tool} to crew store (${baseWhere}): ${badCrew}. Crew stores must never contain secrets, URLs, internal hostnames, IPs, or absolute local paths.`;
     }
   }
 
@@ -160,7 +171,13 @@ if (require.main === module) {
     const input = await readInput();
     const reason = check(input.tool_name, input.tool_input, readLevel(input.session_id));
     if (reason) {
-      const kind = reason.includes('VIBES') ? 'vibes-tamper' : reason.includes('.neckbeard.json') ? 'config-censor' : reason.includes('(paranoid)') ? 'unsafe-op' : 'secret';
+      const kind = reason.includes('VIBES')
+        ? 'vibes-tamper'
+        : reason.includes('.neckbeard.json') || reason.includes('crew store')
+          ? 'config-censor'
+          : reason.includes('(paranoid)')
+            ? 'unsafe-op'
+            : 'secret';
       recordGuardBlock(input.session_id, kind, input.cwd || process.cwd());
       emitDeny(reason);
     }

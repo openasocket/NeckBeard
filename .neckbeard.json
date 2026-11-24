@@ -34,6 +34,7 @@
         "hooks/band/analyzer.ts->sql,fs,serde",
         "hooks/band/dashboard.ts->fs,serde",
         "hooks/band/register.tsx->fs,serde",
+        "hooks/ensemble.js->fs,serde",
         "hooks/lib.js->fs,serde",
         "hooks/prompt.js->fs",
         "hooks/surface.js->sql,fs,serde",
@@ -53,6 +54,7 @@
       ],
       "ai": [
         "hooks/band/analyzer.ts->ai",
+        "hooks/ensemble.js->ai",
         "hooks/guard.js->ai",
         "hooks/lib.js->ai",
         "hooks/surface.js->ai",
@@ -61,13 +63,13 @@
     }
   },
   "architecture": {
-    "fileCount": 16,
+    "fileCount": 17,
     "moduleCount": 6,
-    "boundaryFileCount": 14,
+    "boundaryFileCount": 15,
     "bridgeCount": 6,
     "flowCount": 3,
     "modules": [
-      "hooks:gateway(9f,3b)",
+      "hooks:gateway(10f,3b)",
       "hooks/band:gateway(3f,2b)",
       "scripts:gateway(1f,1b)",
       ".github/workflows:pipeline(1f,0b)",

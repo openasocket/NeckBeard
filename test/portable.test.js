@@ -154,6 +154,20 @@ test('core ruleset parity, line limits, required sentences, and forbidden terms'
     assert.ok(agents.includes(line), `AGENTS.md missing: ${line}`);
   }
 
+  // Crew Fleet Standard — Anti-Sycophancy & Grounded Candor Contract
+  for (const token of [
+    'Grounded Candor (Anti-Sycophancy)',
+    'No filler praise or validation openers',
+    'verifiable evidence',
+    '3 Gates',
+    'compliment sandwiches',
+    'social pressure',
+    'logged override',
+  ]) {
+    assert.ok(agents.includes(token), `AGENTS.md missing grounded candor token: ${token}`);
+    assert.ok(skillRaw.includes(token), `skills/neckbeard/SKILL.md missing grounded candor token: ${token}`);
+  }
+
   // Crew Operational Upgrade contracts (Verbatim Output Proof, INV-LLM-06, INV-LLM-07)
   for (const token of [
     '[NECKBEARD-DONE]',

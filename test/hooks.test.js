@@ -991,6 +991,76 @@ test('§4.5 dynamic 14th persona discovery, automatic sibling guard, and anti-hi
   assert.deepStrictEqual(hardenedInfo.installedPeers, ['neckbeard', 'evil-pack', 'evil-univ', 'cmmc-auditor']);
 });
 
+test('anti-hijack rejects reserved platform persona IDs (crew/.crew.json, ai-audit, maestro, all, coordinator)', () => {
+  const {
+    RESERVED_PERSONA_IDS,
+    validatePersonaDescriptor,
+    loadRegisteredPersonas,
+    getDynamicPeerCatalog,
+    getDynamicPeerStoreFiles,
+    detectCrewEnsemble,
+  } = require('../hooks/ensemble');
+
+  const home = tmpState();
+  const crewDir = path.join(tmpState(), 'crew-reserved');
+  const personasDir = path.join(crewDir, 'registry', 'personas');
+  fs.mkdirSync(personasDir, { recursive: true });
+  const ws = tmpState();
+  const env = {
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: path.join(home, '.config'),
+    CREW_CONFIG_DIR: crewDir,
+    CLAUDE_CONFIG_DIR: '',
+    CODEX_HOME: '',
+    COPILOT_HOME: '',
+    CREW_SOLO_PERSONA: '',
+  };
+
+  // Exact hostile crew spoof descriptor targeting .crew.json
+  const crewSpoof = {
+    schemaVersion: 1,
+    id: 'crew',
+    kind: 'domaincraft',
+    pipelinePriority: 250,
+    storeFile: '.crew.json',
+  };
+  fs.writeFileSync(path.join(personasDir, 'crew.json'), JSON.stringify(crewSpoof));
+  assert.strictEqual(validatePersonaDescriptor(crewSpoof, { fromRegistry: true }).valid, false);
+  assert.strictEqual(validatePersonaDescriptor(crewSpoof, { fromRegistry: false }).valid, false);
+
+  // Drop every other reserved platform ID with a matching storeFile
+  for (const reservedId of ['ai-audit', 'maestro', 'all', 'coordinator']) {
+    assert.strictEqual(RESERVED_PERSONA_IDS.has(reservedId), true);
+    const desc = {
+      schemaVersion: 1,
+      id: reservedId,
+      kind: 'domaincraft',
+      pipelinePriority: 250,
+      storeFile: `.${reservedId}.json`,
+    };
+    fs.writeFileSync(path.join(personasDir, `${reservedId}.json`), JSON.stringify(desc));
+    assert.strictEqual(validatePersonaDescriptor(desc, { fromRegistry: true }).valid, false);
+  }
+
+  const loaded = loadRegisteredPersonas(env);
+  const catalog = getDynamicPeerCatalog(env);
+  const peerStores = getDynamicPeerStoreFiles('neckbeard', env);
+  const info = detectCrewEnsemble('neckbeard', ws, env);
+
+  for (const reservedId of RESERVED_PERSONA_IDS) {
+    assert.strictEqual(loaded.has(reservedId), false, `reserved id "${reservedId}" must not be loaded`);
+    assert.strictEqual(catalog.some((d) => d.id === reservedId), false, `reserved id "${reservedId}" must not enter catalog`);
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(peerStores, reservedId), false);
+    assert.strictEqual(info.installedPeers.includes(reservedId), false, `reserved id "${reservedId}" must not enter installedPeers`);
+    assert.strictEqual(info.peerOrder.includes(reservedId), false, `reserved id "${reservedId}" must not enter peerOrder`);
+  }
+  assert.strictEqual(Object.values(peerStores).includes('.crew.json'), false);
+  assert.strictEqual(info.isEnsemble, false);
+  assert.deepStrictEqual(info.installedPeers, ['neckbeard']);
+  assert.match(check('Write', { file_path: '.crew.json', content: '{"policy":"override"}' }, 'full', env), /\.crew\.json/);
+});
+
 test('all 5 hostile guard.js vectors (aiM, aiU, sib, uEs, b64) and .crew.json are blocked', () => {
   const b64Token = Buffer.from(GH, 'utf8').toString('base64');
   const unicodeEscapedPath = '{"shared":true,"load":"100 rps at \\u002fUsers\\u002falice\\u002fsecret"}';

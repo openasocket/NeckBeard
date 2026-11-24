@@ -5,7 +5,7 @@
 //   - Dynamic drop-in discovery from $CREW_CONFIG_DIR/registry/personas/*.json
 //   - Strict anti-hijack invariants on load:
 //       * reject symlinks (lstatSync().isSymbolicLink()), files > 32768B, invalid JSON,
-//         invalid id (!/^[a-z][a-z0-9-]{1,47}$/), storeFile !== "." + id + ".json",
+//         invalid id (!/^[a-z][a-z0-9-]{1,47}$/), reserved platform IDs, storeFile !== "." + id + ".json",
 //         and secrets / URLs / local paths
 //       * clamp any non-core/unsigned descriptor (kind !== "universal" or id not in official 13)
 //         whose pipelinePriority < 200 to 200
@@ -41,6 +41,7 @@ const CREW_STORE_FILES = Object.freeze(
 );
 
 const PERSONA_ID_RE = /^[a-z][a-z0-9-]{1,47}$/;
+const RESERVED_PERSONA_IDS = new Set(['crew', 'ai-audit', 'maestro', 'all', 'coordinator']);
 const MAX_DESCRIPTOR_BYTES = 32768;
 const MAX_REGISTRY_FILES = 256;
 const NON_CORE_MIN_PRIORITY = 200;
@@ -157,9 +158,16 @@ function validatePersonaDescriptor(rawOrObj, opts = {}) {
   if (!PERSONA_ID_RE.test(id)) {
     return { valid: false, reason: `invalid persona id "${id}"` };
   }
+  if (RESERVED_PERSONA_IDS.has(id)) {
+    return { valid: false, reason: `reserved persona id "${id}"` };
+  }
 
   const expectedStoreFile = `.${id}.json`;
-  if (typeof parsed.storeFile !== 'string' || parsed.storeFile !== expectedStoreFile) {
+  if (
+    typeof parsed.storeFile !== 'string' ||
+    parsed.storeFile.toLowerCase() === '.crew.json' ||
+    parsed.storeFile !== expectedStoreFile
+  ) {
     return { valid: false, reason: `storeFile must equal "${expectedStoreFile}"` };
   }
 
@@ -308,7 +316,7 @@ function detectCrewEnsemble(selfId, cwd = process.cwd(), env = process.env) {
   const catalog = getDynamicPeerCatalog(safeEnv);
   const byId = new Map(catalog.map((d) => [d.id, d]));
 
-  if (!byId.has(normalizedSelf) && PERSONA_ID_RE.test(normalizedSelf)) {
+  if (!byId.has(normalizedSelf) && PERSONA_ID_RE.test(normalizedSelf) && !RESERVED_PERSONA_IDS.has(normalizedSelf)) {
     const fallbackDesc = {
       schemaVersion: 1,
       id: normalizedSelf,
@@ -537,6 +545,7 @@ module.exports = {
   CREW_PIPELINE_ORDER,
   CREW_STORE_FILES,
   PERSONA_ID_RE,
+  RESERVED_PERSONA_IDS,
   MAX_DESCRIPTOR_BYTES,
   NON_CORE_MIN_PRIORITY,
   getHomeDir,

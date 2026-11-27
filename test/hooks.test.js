@@ -33,6 +33,11 @@ const KEY = '-----BEGIN ' + 'OPENSSH PRIVATE KEY-----';
 function run(hook, input, env = {}) {
   const childEnv = { ...process.env, NECKBEARD_LEVEL: '' };
   delete childEnv.NECKBEARD_SURFACE;
+  delete childEnv.NECKBEARD_SUBAGENTS;
+  delete childEnv.CREW_EAGER_LOAD;
+  if ((!env.HOME || env.HOME === process.env.HOME) && !('CREW_SOLO_PERSONA' in env)) {
+    childEnv.CREW_SOLO_PERSONA = 'neckbeard';
+  }
   Object.assign(childEnv, env);
   const r = spawnSync(process.execPath, [path.join(HOOKS, hook)], {
     input: JSON.stringify(input), encoding: 'utf8', timeout: 8000,
@@ -693,7 +698,16 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   assert.strictEqual(ensInfo.isEnsemble, true);
   assert.strictEqual(ensInfo.isEnsembleLeader, false);
   assert.strictEqual(ensInfo.leaderId, 'rainmaker');
-  const ensSubCtx = run('subagent-start.js', { session_id: 'ENS-SUB', cwd: soloWs }, {
+  // Lazy non-leader skips Explore & generic subagents, injects adapted rules on matching neckbeard subagent
+  assert.strictEqual(run('session-start.js', { session_id: 'ENS-SUB', source: 'startup', cwd: soloWs }, {
+    NECKBEARD_STATE_DIR: tmpState(),
+    ...isolatedEnv(ensHome),
+  }), null);
+  assert.strictEqual(run('subagent-start.js', { session_id: 'ENS-SUB', cwd: soloWs, agent_type: 'Explore' }, {
+    NECKBEARD_STATE_DIR: tmpState(),
+    ...isolatedEnv(ensHome),
+  }), null);
+  const ensSubCtx = run('subagent-start.js', { session_id: 'ENS-SUB', cwd: soloWs, agent_type: 'neckbeard' }, {
     NECKBEARD_STATE_DIR: tmpState(),
     ...isolatedEnv(ensHome),
   }).hookSpecificOutput.additionalContext;
@@ -703,6 +717,14 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
   );
   assert.ok(!ensSubCtx.includes('End every reply with the load assumed'), 'Ensemble removes unconditional footer demand');
   assert.ok(!ensSubCtx.includes('Crew Peers [active]'), 'Non-leader suppresses duplicate Crew Peers line');
+
+  // Lazy UserPromptSubmit hydration: unrelated prompt emits nothing, coding prompt hydrates ONCE
+  const lazyState = tmpState();
+  const lazyEnv = { NECKBEARD_STATE_DIR: lazyState, ...isolatedEnv(ensHome) };
+  assert.strictEqual(run('prompt.js', { session_id: 'LAZY-NB', cwd: soloWs, prompt: 'show git log' }, lazyEnv), null);
+  const nbHydrated = run('prompt.js', { session_id: 'LAZY-NB', cwd: soloWs, prompt: 'refactor the SQL auth endpoint for lower latency' }, lazyEnv).hookSpecificOutput.additionalContext;
+  assert.ok(nbHydrated.includes('NECKBEARD MODE ACTIVE'));
+  assert.strictEqual(run('prompt.js', { session_id: 'LAZY-NB', cwd: soloWs, prompt: 'fix another API endpoint' }, lazyEnv), null);
 
   // 2b. HeadHoncho elects as leader ahead of RainMaker and NeckBeard
   const hhHome = tmpState();
@@ -1174,4 +1196,153 @@ test('unified $CREW_CONFIG_DIR 3-Tier Memory, Compartment Wall, Anti-Poisoning, 
   // Prompt slash command routing for /neckbeard-memory
   assert.deepStrictEqual(parseCommand('/neckbeard-memory inspect'), { action: 'memory', value: 'inspect' });
   assert.deepStrictEqual(parseCommand('/neckbeard memory inspect'), { action: 'memory', value: 'inspect' });
+});
+
+test('surface.js raises default MAX_FILES to 20,000, emits explicit cap notice, and honors --uncapped / NECKBEARD_UNCAPPED=1', () => {
+  const { execFileSync } = require('child_process');
+  const surfaceMod = require('../hooks/surface');
+  assert.strictEqual(surfaceMod.MAX_FILES, 20000);
+
+  // 1. Real files on disk with a small custom maxFiles cap: verifies exact truncation vs uncapped scan
+  const smallRepo = tmpState();
+  try {
+    for (let i = 1; i <= 5; i++) {
+      fs.writeFileSync(
+        path.join(smallRepo, `svc${i}.js`),
+        `app.get('/r${i}', (req, res) => { process.env.KEY_${i}; res.send('ok'); });\n`
+      );
+    }
+    const cappedSurface = surfaceMod.buildSurface(smallRepo, { maxFiles: 3 });
+    assert.match(cappedSurface, /Notice:\s+File cap exceeded: 5 matching files exceed cap of 3/);
+    assert.ok(cappedSurface.includes('--uncapped'));
+    assert.ok(cappedSurface.includes('NECKBEARD_UNCAPPED=1'));
+
+    const cappedBounds = surfaceMod.buildBoundaryMap(smallRepo, 16, { maxFiles: 3 });
+    assert.strictEqual(cappedBounds.truncated, true);
+    assert.strictEqual(cappedBounds.totalFiles, 5);
+    assert.strictEqual(cappedBounds.cap, 3);
+    assert.match(cappedBounds.notice, /5 matching files exceed cap of 3/);
+    assert.strictEqual(cappedBounds.external.ingress.length, 3);
+
+    const uncappedBounds = surfaceMod.buildBoundaryMap(smallRepo, 16, { maxFiles: 3, uncapped: true });
+    assert.strictEqual(uncappedBounds.truncated, undefined);
+    assert.strictEqual(uncappedBounds.external.ingress.length, 5);
+
+    const envUncappedBounds = surfaceMod.buildBoundaryMap(smallRepo, 16, { maxFiles: 3, env: { NECKBEARD_UNCAPPED: '1' } });
+    assert.strictEqual(envUncappedBounds.truncated, undefined);
+    assert.strictEqual(envUncappedBounds.external.ingress.length, 5);
+
+    const cappedArch = surfaceMod.buildArchitectureMap(smallRepo, 16, 24, { maxFiles: 3 });
+    assert.strictEqual(cappedArch.truncated, true);
+    assert.strictEqual(cappedArch.fileCount, 3);
+    assert.strictEqual(cappedArch.totalFiles, 5);
+
+    const cappedCtx = surfaceMod.formatProjectContext(smallRepo, process.env, { maxFiles: 3, includeCrewContext: false });
+    assert.match(cappedCtx, /Notice: File cap exceeded: 5 matching files exceed cap of 3/);
+  } finally {
+    fs.rmSync(smallRepo, { recursive: true, force: true });
+  }
+
+  // 2. Real git repo with 20,005 indexed source files (exceeding default MAX_FILES = 20000) tested end-to-end via CLI
+  const hugeRepo = tmpState();
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: hugeRepo });
+    fs.mkdirSync(path.join(hugeRepo, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(hugeRepo, 'src', 'app.js'), "app.get('/health', (req, res) => res.send('ok'));\n");
+    const blobSha = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: hugeRepo, input: '', encoding: 'utf8' }).trim();
+    const indexLines = [];
+    for (let i = 0; i < 20004; i++) {
+      indexLines.push(`100644 ${blobSha}\tsrc/f${String(i).padStart(5, '0')}.js`);
+    }
+    execFileSync('git', ['update-index', '--index-info'], { cwd: hugeRepo, input: indexLines.join('\n') + '\n' });
+    execFileSync('git', ['add', 'src/app.js'], { cwd: hugeRepo });
+
+    // Default CLI run (no --uncapped): MUST NOT silently truncate; emits exact count 20005 vs 20000 + --uncapped
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.NECKBEARD_UNCAPPED;
+    const cappedCli = spawnSync(process.execPath, [path.join(HOOKS, 'surface.js'), '--map', hugeRepo], {
+      encoding: 'utf8',
+      timeout: 15000,
+      env: cleanEnv,
+    });
+    assert.strictEqual(cappedCli.status, 0, cappedCli.stderr);
+    assert.match(cappedCli.stderr, /20005 matching files exceed cap of 20000/);
+    assert.ok(cappedCli.stderr.includes('--uncapped'));
+    assert.match(cappedCli.stdout, /20005 matching files exceed cap of 20000/);
+    const cappedCfg = JSON.parse(fs.readFileSync(path.join(hugeRepo, '.neckbeard.json'), 'utf8'));
+    assert.strictEqual(cappedCfg.architecture.fileCount, 20000);
+
+    // Explicit --uncapped CLI flag scans all 20,005 files with no truncation warning
+    const uncappedCli = spawnSync(process.execPath, [path.join(HOOKS, 'surface.js'), '--map', '--uncapped', hugeRepo], {
+      encoding: 'utf8',
+      timeout: 15000,
+      env: cleanEnv,
+    });
+    assert.strictEqual(uncappedCli.status, 0, uncappedCli.stderr);
+    assert.strictEqual(uncappedCli.stderr.trim(), '');
+    assert.ok(!uncappedCli.stdout.includes('File cap exceeded'));
+    const uncappedCfg = JSON.parse(fs.readFileSync(path.join(hugeRepo, '.neckbeard.json'), 'utf8'));
+    assert.strictEqual(uncappedCfg.architecture.fileCount, 20005);
+
+    // Env propagation NECKBEARD_UNCAPPED=1 also scans all 20,005 files cleanly
+    const envCli = spawnSync(process.execPath, [path.join(HOOKS, 'surface.js'), '--map', hugeRepo], {
+      encoding: 'utf8',
+      timeout: 15000,
+      env: { ...cleanEnv, NECKBEARD_UNCAPPED: '1' },
+    });
+    assert.strictEqual(envCli.status, 0, envCli.stderr);
+    assert.strictEqual(envCli.stderr.trim(), '');
+    assert.ok(!envCli.stdout.includes('File cap exceeded'));
+  } finally {
+    fs.rmSync(hugeRepo, { recursive: true, force: true });
+  }
+
+  // 3. Prompt & Pi command propagation for --uncapped (preserving exact non-uncapped shape)
+  assert.deepStrictEqual(parseCommand('/neckbeard map'), { action: 'map' });
+  assert.deepStrictEqual(parseCommand('/neckbeard map --uncapped'), { action: 'map', uncapped: true });
+  assert.deepStrictEqual(parseCommand('/neckbeard-map --uncapped'), { action: 'map', uncapped: true });
+  assert.deepStrictEqual(parseCommand('$neckbeard-map --uncapped'), { action: 'map', uncapped: true });
+});
+
+test('NeckBeard guard blocks real-format SSNs, Luhn-valid PANs in source comments, and non-empty .innerHTML sinks while allowing masked placeholders', () => {
+  const { check, isLuhnValid, findSourceDlpViolation, findDynamicInnerHtml } = require('../hooks/guard');
+  const { formatEnsembleRules } = require('../hooks/ensemble');
+
+  assert.strictEqual(isLuhnValid('4111111111111111'), true);
+  assert.strictEqual(isLuhnValid('4111111111111119'), false);
+
+  // Source comments with real-format SSN or Luhn-valid PAN blocked at full level
+  assert.match(
+    check('Write', { file_path: 'src/redact.mjs', content: '// SSN: 123-45-6789\nexport const x = 1;\n' }, 'full') || '',
+    /Source DLP violation.*real-format SSN/
+  );
+  assert.match(
+    check('Write', { file_path: 'src/redact.mjs', content: '// e.g. 4111-1111-1111-1111\nexport const x = 1;\n' }, 'full') || '',
+    /Source DLP violation.*Luhn-valid payment card PAN/
+  );
+  assert.strictEqual(
+    check('Write', { file_path: 'src/redact.mjs', content: '// SSN: XXX-XX-XXXX | PAN: 4XXX-XXXX-XXXX-XXXX\nexport const x = 1;\n' }, 'full'),
+    null
+  );
+  assert.strictEqual(findSourceDlpViolation('// date 2026-11-25 and uuid 12345678-1234-1234-1234-1234567890ab'), null);
+
+  // Non-empty .innerHTML assignment blocked; empty string clearing and textContent allowed
+  assert.match(
+    check('Write', { file_path: 'public/app.js', content: 'container.innerHTML = renderCard(item);\n' }, 'full') || '',
+    /DOM sink violation.*innerHTML/
+  );
+  assert.strictEqual(
+    check('Write', { file_path: 'public/app.js', content: "container.innerHTML = '';\ncontainer.textContent = label;\n" }, 'full'),
+    null
+  );
+  assert.strictEqual(findDynamicInnerHtml('el.innerHTML = foo;', 'docs/guide.md'), null);
+
+  // Ensemble rules include mandatory Hipster and EdgeLord pre-completion gates when installed
+  const rulesBanner = formatEnsembleRules('End every reply with load.', {
+    isEnsemble: true,
+    isEnsembleLeader: true,
+    installedPeers: ['neckbeard', 'hipster', 'edgelord'],
+  });
+  assert.match(rulesBanner, /Live-Glass UI Gate \(Hipster\)/);
+  assert.match(rulesBanner, /Red-Team & DLP Gate \(EdgeLord\)/);
 });

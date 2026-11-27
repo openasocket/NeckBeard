@@ -62,6 +62,7 @@ test('skill directory layout', () => {
     'hooks/band/analyzer.ts',
     'hooks/band/dashboard.ts',
     'hooks/band-import.js',
+    'hooks/audit-plan.js',
     'hooks/memory.js',
     'hooks/vibes.js',
     'scripts/install-all.js',
@@ -282,6 +283,18 @@ test('review, audit, and copilot instructions content', () => {
   assert.match(audit, /draft `SPEC.md`/);
   assert.ok(!audit.includes('approved `SPEC.md`'));
   assert.ok(audit.includes('.maestro/playbooks/'));
+  assert.ok(audit.includes('audit-plan.js'));
+  assert.ok(audit.includes('--check-coverage'));
+  assert.ok(audit.includes('--emit-playbook'));
+  assert.ok(audit.includes('--uncapped'));
+  assert.match(audit, /Small \(`<= 80`/);
+  assert.match(audit, /Medium \(`81/);
+  assert.match(audit, /Massive \(`> 500`/);
+  assert.match(audit, /chunk guardrail/i);
+
+  const mapSkill = readText('skills/neckbeard-map/SKILL.md');
+  assert.ok(mapSkill.includes('20,000'));
+  assert.ok(mapSkill.includes('--uncapped'));
 
   const debt = readText('skills/neckbeard-debt/SKILL.md');
   assert.ok(debt.trimEnd().split('\n').length <= 45, 'neckbeard-debt must be <= 45 lines');

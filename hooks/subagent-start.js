@@ -1,9 +1,16 @@
 'use strict';
-// SubagentStart: session context never reaches subagents, so hand them the ruleset,
-// project load default + trust-boundary map, and VIBES summary too.
-// NECKBEARD_SUBAGENTS=0 turns this off.
+// SubagentStart: inject NeckBeard ruleset only when the spawned subagent matches NeckBeard
+// (or in Singleton / CREW_EAGER_LOAD=1 mode). Skips utility subagents (Explore/Plan/research)
+// and sibling Crew persona subagents to avoid multi-thousand-token context bloat.
+// NECKBEARD_SUBAGENTS=0 turns this off completely.
 
-const { readInput, readLevel, emitContext, rules, detectCrewEnsemble, formatEnsembleRules } = require('./lib');
+const { readInput, readLevel, emitContext, rules } = require('./lib');
+const {
+  detectCrewEnsemble,
+  formatEnsembleRules,
+  formatEnsembleRosterIndex,
+  decideSubagentInjection,
+} = require('./ensemble');
 const { ensureFreshBoundaryMap, formatProjectContext } = require('./surface');
 const { hasVibes, formatVibesContext } = require('./vibes');
 const { formatCompactMemoryDigest } = require('./memory');
@@ -16,6 +23,14 @@ const { formatCompactMemoryDigest } = require('./memory');
 
   const cwd = input.cwd || process.cwd();
   const ensembleInfo = detectCrewEnsemble('neckbeard', cwd, process.env);
+  const mode = decideSubagentInjection('neckbeard', input, ensembleInfo, process.env);
+  if (mode === 'skip') return;
+  if (mode === 'roster') {
+    const roster = formatEnsembleRosterIndex(ensembleInfo);
+    if (roster) emitContext('SubagentStart', roster);
+    return;
+  }
+
   let text = formatEnsembleRules(rules(level), ensembleInfo);
   try {
     ensureFreshBoundaryMap(cwd);

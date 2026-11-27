@@ -6,6 +6,7 @@ description: >
   Danny/Dani), Hipster (Slick Sammy), EdgeLord (Ruckus Ron/Ronica), or any lead
   agent/team to write the smallest code change that passes the Safe, Fast at
   the named load, and Done gates.
+disallowedTools: Agent, Task, TeamCreate
 ---
 
 # NeckBeard Subagent (`Ashy Larry` / `Ashy Lari`)

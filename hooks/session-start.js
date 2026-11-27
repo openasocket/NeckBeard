@@ -1,34 +1,40 @@
 'use strict';
-// SessionStart: load the ruleset for this session's level, inject persisted project load +
-// concise trust-boundary map when .neckbeard.json (or local project config) exists, inject
-// VIBES (.ai-audit/) summary when present, and include the full attack-surface map when NECKBEARD_SURFACE=1.
+// SessionStart: load the NeckBeard ruleset for this session's level.
+// In Multi-Peer Ensemble mode (default lazy loading; CREW_EAGER_LOAD=1 for upfront):
+//   - Only the elected Ensemble Leader emits a compact Crew Roster Index (~250 tokens).
+//   - Non-leader peers defer (0 bytes) and hydrate on demand via UserPromptSubmit when relevant.
+// In Singleton mode (or CREW_SOLO_PERSONA=neckbeard), loads immediately.
 
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { readInput, readLevel, writeLevel, emitContext, rules, detectCrewEnsemble, formatEnsembleRules } = require('./lib');
+const { readInput, readLevel, writeLevel, stateDir, emitContext, rules } = require('./lib');
+const {
+  detectCrewEnsemble,
+  formatEnsembleRules,
+  shouldDeferSessionStart,
+  formatEnsembleRosterIndex,
+  markPersonaHydrated,
+} = require('./ensemble');
 const { ensureFreshBoundaryMap, formatProjectContext } = require('./surface');
 const { hasVibes, formatVibesContext } = require('./vibes');
 const { formatCompactMemoryDigest } = require('./memory');
 
-(async () => {
-  const input = await readInput();
-  const level = readLevel(input.session_id); // compact and resume keep the session's level
-  try { writeLevel(input.session_id, level); } catch { /* state is best-effort */ }
-  if (level === 'off') return;
+function buildFullNeckbeardContext(input = {}, env = process.env, ensembleInfoOverride = null, levelOverride = null) {
+  const safeInput = input || {};
+  const safeEnv = env || process.env;
+  const level = levelOverride || readLevel(safeInput.session_id, safeEnv);
+  if (level === 'off') return '';
 
-  const cwd = input.cwd || process.cwd();
-  const ensembleInfo = detectCrewEnsemble('neckbeard', cwd, process.env);
+  const cwd = safeInput.cwd || process.cwd();
+  const ensembleInfo = ensembleInfoOverride || detectCrewEnsemble('neckbeard', cwd, safeEnv);
   let text = formatEnsembleRules(rules(level), ensembleInfo);
 
-  // Auto-refresh persisted boundary map if empty, referencing deleted files, or older than 24h,
-  // and always inject the concise internal/external trust-boundary map (<150 tokens).
   try {
     ensureFreshBoundaryMap(cwd);
-    const ctx = formatProjectContext(cwd, process.env, { includeCrewContext: ensembleInfo.isEnsembleLeader });
+    const ctx = formatProjectContext(cwd, safeEnv, { includeCrewContext: ensembleInfo.isEnsembleLeader });
     if (ctx) text += '\n\n' + ctx;
   } catch { /* best-effort */ }
 
-  // Default to VIBES (.ai-audit/) telemetry summary when present.
   try {
     if (hasVibes(cwd)) {
       const vibes = formatVibesContext(cwd);
@@ -36,13 +42,12 @@ const { formatCompactMemoryDigest } = require('./memory');
     }
   } catch { /* best-effort */ }
 
-  // Append compact <= 800-token 3-Tier Memory digest ONLY when memory entries exist.
   try {
-    const memDigest = formatCompactMemoryDigest({}, process.env);
+    const memDigest = formatCompactMemoryDigest({}, safeEnv);
     if (memDigest) text += '\n\n' + memDigest;
   } catch { /* best-effort */ }
 
-  if (process.env.NECKBEARD_SURFACE === '1') {
+  if (safeEnv.NECKBEARD_SURFACE === '1') {
     try {
       const map = execFileSync(process.execPath, [path.join(__dirname, 'surface.js'), cwd], {
         encoding: 'utf8', timeout: 3000, maxBuffer: 256 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
@@ -50,5 +55,35 @@ const { formatCompactMemoryDigest } = require('./memory');
       if (map) text += '\n\n' + map;
     } catch { /* a slow or failed map never costs the rules */ }
   }
-  emitContext('SessionStart', text);
-})().finally(() => setTimeout(() => process.exit(0), 0));
+  return text;
+}
+
+module.exports = { buildFullNeckbeardContext };
+
+if (require.main === module) {
+  (async () => {
+    const input = await readInput();
+    const level = readLevel(input.session_id);
+    try { writeLevel(input.session_id, level); } catch { /* state is best-effort */ }
+    if (level === 'off') return;
+
+    const cwd = input.cwd || process.cwd();
+    const ensembleInfo = detectCrewEnsemble('neckbeard', cwd, process.env);
+    if (shouldDeferSessionStart(ensembleInfo, process.env)) {
+      if (ensembleInfo.isEnsembleLeader) {
+        let roster = formatEnsembleRosterIndex(ensembleInfo);
+        try {
+          const ctx = formatProjectContext(cwd, process.env, { includeCrewContext: true });
+          const peersLine = ctx && ctx.split('\n').find((l) => l.includes('Crew Peers [active]'));
+          if (peersLine) roster += '\n' + peersLine;
+        } catch { /* best-effort */ }
+        if (roster) emitContext('SessionStart', roster);
+      }
+      return;
+    }
+
+    const text = buildFullNeckbeardContext(input, process.env, ensembleInfo, level);
+    markPersonaHydrated('neckbeard', input.session_id, stateDir());
+    if (text) emitContext('SessionStart', text);
+  })().finally(() => setTimeout(() => process.exit(0), 0));
+}

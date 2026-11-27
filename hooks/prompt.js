@@ -9,7 +9,16 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { readInput, readLevel, writeLevel, normalizeLevel, claudeDir, emitContext, rules } = require('./lib');
+const { readInput, readLevel, writeLevel, normalizeLevel, stateDir, claudeDir, emitContext, rules } = require('./lib');
+const {
+  detectCrewEnsemble,
+  shouldDeferSessionStart,
+  matchesPersonaIntent,
+  isPersonaHydrated,
+  markPersonaHydrated,
+  clearPersonaHydrated,
+} = require('./ensemble');
+const { buildFullNeckbeardContext } = require('./session-start');
 const { buildBoundaryMap, buildArchitectureMap, readProjectConfig, writeProjectConfig, formatProjectContext, formatCrewContext } = require('./surface');
 const { runMemoryCommand } = require('./memory');
 
@@ -17,7 +26,12 @@ function parseCommand(prompt) {
   const raw = String(prompt || '').trim();
   const p = raw.toLowerCase();
   if (/^(stop neckbeard|neckbeard off|normal mode)\b/.test(p)) return 'off';
-  if (/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)-map(?:\s|$)/i.test(raw)) return { action: 'map' };
+  const mapSlash = raw.match(/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)-map(?:\s+([\s\S]+))?$/i);
+  if (mapSlash) {
+    return /(?:^|\s)--uncapped(?:\s|$)/i.test(mapSlash[1] || '')
+      ? { action: 'map', uncapped: true }
+      : { action: 'map' };
+  }
   const memSlash = raw.match(/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)-memory(?:\s+([\s\S]+))?$/i);
   if (memSlash) return { action: 'memory', value: (memSlash[1] || '').trim() };
   const m = raw.match(/^[/@$](?:neckbeard(?::neckbeard)?|larry|lari)(?:\s+([\s\S]+))?$/i);
@@ -40,7 +54,11 @@ function parseCommand(prompt) {
   }
 
   if (sub === 'load') return { action: 'load', value: rest.slice(4).trim() };
-  if (sub === 'map') return { action: 'map' };
+  if (sub === 'map') {
+    return tokens.slice(1).some((t) => t.toLowerCase() === '--uncapped')
+      ? { action: 'map', uncapped: true }
+      : { action: 'map' };
+  }
   if (sub === 'crew') return { action: 'crew' };
   if (sub === 'memory') return { action: 'memory', value: rest.slice(6).trim() };
   if (sub === 'share') {
@@ -77,14 +95,18 @@ function handleSubcommand(cmd, cwd) {
   }
 
   if (cmd.action === 'map') {
-    const boundaries = buildBoundaryMap(cwd);
-    const architecture = buildArchitectureMap(cwd);
-    const saved = writeProjectConfig(cwd, { boundaries, architecture });
+    const scanOpts = cmd.uncapped ? { uncapped: true } : {};
+    const boundaries = buildBoundaryMap(cwd, 16, scanOpts);
+    const architecture = buildArchitectureMap(cwd, 16, 24, scanOpts);
+    const saved = writeProjectConfig(cwd, { boundaries, architecture }, process.env, scanOpts);
     try {
-      const child = spawn(process.execPath, [path.join(__dirname, 'band-import.js')], { cwd, detached: true, stdio: 'ignore' });
+      const childEnv = cmd.uncapped ? { ...process.env, NECKBEARD_UNCAPPED: '1' } : process.env;
+      const child = spawn(process.execPath, [path.join(__dirname, 'band-import.js')], { cwd, env: childEnv, detached: true, stdio: 'ignore' });
       child.unref();
     } catch { /* best-effort */ }
-    return `NECKBEARD trust-boundary & architecture map updated (${saved.shared ? '.neckbeard.json, shared' : 'local'}).\n\n${formatProjectContext(cwd)}`;
+    const capNotice = boundaries.notice || architecture.notice;
+    const suffix = capNotice ? `\nWARNING: ${capNotice}` : '';
+    return `NECKBEARD trust-boundary & architecture map updated (${saved.shared ? '.neckbeard.json, shared' : 'local'}).\n\n${formatProjectContext(cwd, process.env, { ...scanOpts, liveMap: boundaries, architecture })}${suffix}`;
   }
 
   if (cmd.action === 'crew') {
@@ -143,12 +165,28 @@ function handleSubcommand(cmd, cwd) {
 async function main() {
   const input = await readInput();
   const cmd = parseCommand(input.prompt);
-  if (!cmd) return;
   const id = input.session_id;
   const cwd = input.cwd || process.cwd();
   const current = readLevel(id);
+  const sDir = stateDir();
+
+  if (!cmd) {
+    if (current === 'off') return;
+    const ensembleInfo = detectCrewEnsemble('neckbeard', cwd, process.env);
+    if (
+      shouldDeferSessionStart(ensembleInfo, process.env) &&
+      !isPersonaHydrated('neckbeard', id, sDir) &&
+      matchesPersonaIntent('neckbeard', input.prompt)
+    ) {
+      markPersonaHydrated('neckbeard', id, sDir);
+      const hydrated = buildFullNeckbeardContext(input, process.env, ensembleInfo, current);
+      if (hydrated) emitContext('UserPromptSubmit', hydrated);
+    }
+    return;
+  }
 
   if (typeof cmd === 'object' && cmd.action) {
+    markPersonaHydrated('neckbeard', id, sDir);
     emitContext('UserPromptSubmit', handleSubcommand(cmd, cwd));
     return;
   }
@@ -159,6 +197,11 @@ async function main() {
   }
   const next = cmd === 'on' ? (current === 'off' ? 'full' : current) : cmd;
   writeLevel(id, next);
+  if (next === 'off') {
+    clearPersonaHydrated('neckbeard', id, sDir);
+  } else {
+    markPersonaHydrated('neckbeard', id, sDir);
+  }
   emitContext('UserPromptSubmit', next === 'off'
     ? 'NECKBEARD MODE OFF for this session. Confirm in one short line.'
     : `NECKBEARD level is now ${next}. Confirm in one short line.\n\n${rules(next)}`);

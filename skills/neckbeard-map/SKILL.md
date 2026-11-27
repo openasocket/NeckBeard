@@ -7,6 +7,7 @@ description: >
   shared: false) and ~/.config/neckbeard/telemetry/workspaces-meta.json. Use for
   /neckbeard-map, "/neckbeard map", "map this repo", "refresh the boundary map",
   or "generate the architecture map".
+argument-hint: "[--uncapped]"
 ---
 
 # Neckbeard Map
@@ -15,8 +16,8 @@ Scan the repository's tracked production source files, refresh both `"boundaries
 
 ## Execution
 
-1. Run `node <neckbeard-root>/hooks/surface.js --map` in the target repository root (where `<neckbeard-root>` is the repository root or installed plugin directory such as `~/.claude/plugins/marketplaces/neckbeard` or `~/.gemini/config/plugins/neckbeard`).
-2. Run `node <neckbeard-root>/hooks/band-import.js --summary` in the target repository root so `~/.config/neckbeard/telemetry/workspaces-meta.json` and `~/.config/neckbeard/telemetry/dashboard.html` immediately reflect the refreshed boundary and architecture maps.
+1. Run `node <neckbeard-root>/hooks/surface.js --map` in the target repository root (where `<neckbeard-root>` is the repository root or installed plugin directory such as `~/.claude/plugins/marketplaces/neckbeard` or `~/.gemini/config/plugins/neckbeard`). The default cap is `20,000` source files; if exceeded, `surface.js` emits an explicit cap notice showing the exact file count vs. cap rather than silently truncating—re-run with `--uncapped` (or `NECKBEARD_UNCAPPED=1`, or `/neckbeard-map --uncapped`) for massive repos exceeding `20,000` files.
+2. Run `node <neckbeard-root>/hooks/band-import.js --summary` in the target repository root (with `NECKBEARD_UNCAPPED=1` when uncapped) so `~/.config/neckbeard/telemetry/workspaces-meta.json` and `~/.config/neckbeard/telemetry/dashboard.html` immediately reflect the refreshed boundary and architecture maps.
 
 ## Report Format
 

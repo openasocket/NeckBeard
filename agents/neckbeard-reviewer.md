@@ -5,6 +5,7 @@ description: >
   Reviews diffs or repositories for Safe, Fast at the named load, and Done with
   concrete exploit/bottleneck proof, variant search across architecture.flows,
   and E_patch vs. E_rewrite math. Changes no code.
+disallowedTools: Agent, Task, TeamCreate
 ---
 
 # NeckBeard Reviewer Subagent (`Ashy Larry` / `Ashy Lari`)

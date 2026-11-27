@@ -528,16 +528,174 @@ function formatEnsembleRules(rawRulesText, ensembleInfo) {
   );
 
   if (ensembleInfo.isEnsembleLeader) {
-    const peers = Array.isArray(ensembleInfo.installedPeers)
-      ? ensembleInfo.installedPeers.join(' -> ')
-      : '';
+    const installed = Array.isArray(ensembleInfo.installedPeers) ? ensembleInfo.installedPeers : [];
+    const peers = installed.join(' -> ');
+    const gates = [];
+    if (installed.includes('hipster')) {
+      gates.push(
+        '- Live-Glass UI Gate (Hipster): Whenever UI/web/HTML/CSS/frontend files are created or modified, you MUST run live browser verification (via chrome-devtools MCP or `hipster-verifier` subagent / `node hooks/glass.js`) auditing desktop 1440x900 + mobile 390x844 across every tab/view, recursive alpha-composited WCAG AA contrast (`out = fg * alpha + bg * (1 - alpha)`), and zero unintended visible overlays/modals BEFORE finishing (cap <= 3 remediation loops).'
+      );
+    }
+    if (installed.includes('edgelord')) {
+      gates.push(
+        '- Red-Team & DLP Gate (EdgeLord): Whenever source files are created or modified, you MUST invoke `edgelord-redteam` (or run static source DLP scanning across comments/fixtures for Luhn PANs, real-format SSNs, raw API keys, and non-empty `.innerHTML =` sinks, plus boundary/IDOR/injection attacks) BEFORE finishing (cap <= 3 remediation loops).'
+      );
+    }
+    const gateBlock = gates.length > 0 ? `\nMandatory Pre-Completion Specialist Gates (do NOT leave peer plugins passive):\n${gates.join('\n')}\n` : '';
     const header =
       `[Crew Universe Ensemble Active: ${peers}]\n` +
-      'Multiple Crew Universe personas are active in unison on this harness. Route each task to its owning domain specialist and apply each active persona\'s 3 Gates without stacking competing footers (Governance: HeadHoncho; Build: RainMaker, PropellerHead, NeckBeard, Hipster, EdgeLord; Ship & Run: InfraSmith, UserChamp, RedLine; Growth: StoryTeller, CloutChaser, MeasureUp, DealMaker; plus registered DomainCraft specialists). Emit only the 3-line footer of the persona owning the primary task domain.\n\n';
+      'Multiple Crew Universe personas are active in unison on this harness. Route each task to its owning domain specialist and apply each active persona\'s 3 Gates without stacking competing footers (Governance: HeadHoncho; Build: RainMaker, PropellerHead, NeckBeard, Hipster, EdgeLord; Ship & Run: InfraSmith, UserChamp, RedLine; Growth: StoryTeller, CloutChaser, MeasureUp, DealMaker; plus registered DomainCraft specialists). Emit only the 3-line footer of the persona owning the primary task domain.\n' +
+      gateBlock + '\n';
     return header + adapted;
   }
 
   return adapted;
+}
+
+
+// --- Lazy / Intelligent Persona Loading & Subagent Scoping ---
+const UTILITY_SUBAGENT_TYPES = new Set([
+  "explore",
+  "plan",
+  "claude-code-guide",
+  "statusline-setup",
+  "research",
+  "image-generator",
+  "compaction",
+  "summarizer",
+]);
+
+const PERSONA_INTENT_PATTERNS = Object.freeze({
+  rainmaker: /\b(rainmaker|value\s*val|valentino|valentina|scope|cutline|mvp|prioriti[sz]|backlog|roi|market|competitor|pricing|moneti[sz]|triage|north\s*star|worth\s+building|should\s+we\s+build)\b/i,
+  propellerhead: /\b(propellerhead|decomp|danny|dani|post[\s-]?mortem|pre[\s-]?mortem|root[\s-]?cause|5[\s-]?whys|fault[\s-]?tree|bug|crash|outage|failing\s+test|stack\s*trace|architect|decompos|slice|dag|invariant|migration|plan)\b/i,
+  neckbeard: /\b(neckbeard|larry|lari|implement|refactor|endpoint|api|database|sql|sqlite|postgres|auth|jwt|session|token|security|boundary|scale|perf|latency|cache|concurrency|race|fix|build|code|function|module|rust|typescript|python|backend|server|cli)\b/i,
+  hipster: /\b(hipster|sammy|samuel|samantha|ui|ux|dx|css|html|layout|design|page|landing|website|frontend|react|component|drawer|modal|theme|brand|color|contrast|a11y|accessibility|mobile|viewport|responsive|pptx|deck|slide|docx|pdf|polish|slop|live[\s-]?glass)\b/i,
+  edgelord: /\b(edgelord|ruckus|ronnie|ronica|red[\s-]?team|fuzz|chaos|pentest|exploit|idor|ssrf|xss|sqli|injection|traversal|symlink|bypass|hostile|adversarial|stress[\s-]?test|load[\s-]?test|toctou|double[\s-]?submit|audit|vulnerab|breach)\b/i,
+});
+
+const PERSONA_ROSTER_LINES = Object.freeze({
+  headhoncho: "- HeadHoncho (/headhoncho): Executive governance, vision & escalation policy",
+  rainmaker: "- RainMaker (/rainmaker): Product scope, ValueScore backlog, ROI & 80% cutline",
+  propellerhead: "- PropellerHead (/propellerhead): Feature DAG slicing, pre-mortem & post-mortem root-cause",
+  neckbeard: "- NeckBeard (/neckbeard): Minimal boundary-safe code, load/scale & security invariants",
+  hipster: "- Hipster (/hipster): 5s UX/DX hierarchy, brand systems, anti-slop & live-glass verification",
+  edgelord: "- EdgeLord (/edgelord): Adversarial red-team, hostile fuzzing, concurrency chaos & DLP",
+  infrasmith: "- InfraSmith (/infrasmith): CI/CD, IaC, containers, rollback & production operations",
+  storyteller: "- StoryTeller (/storyteller): Product narrative, launch copy & release notes",
+  cloutchaser: "- CloutChaser (/cloutchaser): Distribution, SEO & growth loops",
+  userchamp: "- UserChamp (/userchamp): Customer empathy, support triage & onboarding",
+  redline: "- RedLine (/redline): Legal, privacy, licensing & compliance review",
+  measureup: "- MeasureUp (/measureup): Analytics, telemetry funnels & experiment rigor",
+  dealmaker: "- DealMaker (/dealmaker): Pricing, packaging & enterprise commercial readiness",
+});
+
+function isEagerMode(env = process.env) {
+  const safe = env || process.env;
+  const v = String(safe.CREW_EAGER_LOAD || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function shouldDeferSessionStart(ensembleInfo, env = process.env) {
+  return Boolean(ensembleInfo && ensembleInfo.isEnsemble && !isEagerMode(env));
+}
+
+function formatEnsembleRosterIndex(ensembleInfo) {
+  if (!ensembleInfo || !ensembleInfo.isEnsemble || !ensembleInfo.isEnsembleLeader) return "";
+  const installed = Array.isArray(ensembleInfo.installedPeers) ? ensembleInfo.installedPeers : [];
+  const peers = installed.join(" -> ");
+  const lines = installed.map((id) => PERSONA_ROSTER_LINES[id] || `- ${id} (/${id}): Domain specialist`);
+  const gates = [];
+  if (installed.includes("hipster")) {
+    gates.push("- Live-Glass UI Gate (Hipster): Verify created/modified UI/web/HTML/CSS files via live browser DOM/contrast/mobile checks before finishing (cap <= 3 loops).");
+  }
+  if (installed.includes("edgelord")) {
+    gates.push("- Red-Team & DLP Gate (EdgeLord): Audit created/modified source files for secrets/PII, innerHTML sinks, and trust-boundary attacks before finishing (cap <= 3 loops).");
+  }
+  const gateBlock = gates.length > 0 ? `\nMandatory Pre-Completion Specialist Gates:\n${gates.join("\n")}\n` : "";
+  return (
+    `[Crew Universe Ensemble Active: ${peers}]\n` +
+    "Lazy persona loading active (only relevant personas hydrate on demand; set CREW_EAGER_LOAD=1 to load all upfront). Deterministic PreToolUse safety guards remain active at 0 token cost. Governance: HeadHoncho; Build: RainMaker, PropellerHead, NeckBeard, Hipster, EdgeLord; Ship & Run: InfraSmith, UserChamp, RedLine; Growth: StoryTeller, CloutChaser, MeasureUp, DealMaker. Emit only the 3-line footer of the persona owning the primary task domain.\n" +
+    `Installed Specialists:\n${lines.join("\n")}\n` +
+    gateBlock
+  ).trim();
+}
+
+function matchesPersonaIntent(personaId, prompt) {
+  const id = String(personaId || "").trim().toLowerCase();
+  const text = String(prompt || "").trim();
+  if (!id || !text) return false;
+  const re = PERSONA_INTENT_PATTERNS[id];
+  if (re && re.test(text)) return true;
+  return new RegExp(`\\b${id.replace(/[.*+?^$()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
+}
+
+function safeSessionKey(sessionId) {
+  const raw = String(sessionId || "default").replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 80);
+  return raw || "default";
+}
+
+function hydrationMarkerPath(stateDirPath, personaId, sessionId) {
+  return path.join(stateDirPath, `${safeSessionKey(sessionId)}.${String(personaId || "crew").toLowerCase()}.hydrated`);
+}
+
+function isPersonaHydrated(personaId, sessionId, stateDirPath) {
+  if (!stateDirPath) return false;
+  try {
+    return fs.existsSync(hydrationMarkerPath(stateDirPath, personaId, sessionId));
+  } catch {
+    return false;
+  }
+}
+
+function markPersonaHydrated(personaId, sessionId, stateDirPath) {
+  if (!stateDirPath) return;
+  try {
+    fs.mkdirSync(stateDirPath, { recursive: true });
+    fs.writeFileSync(hydrationMarkerPath(stateDirPath, personaId, sessionId), "1");
+  } catch { /* best-effort */ }
+}
+
+function clearPersonaHydrated(personaId, sessionId, stateDirPath) {
+  if (!stateDirPath) return;
+  try {
+    const p = hydrationMarkerPath(stateDirPath, personaId, sessionId);
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  } catch { /* best-effort */ }
+}
+
+function extractSubagentType(input) {
+  if (!input || typeof input !== "object") return "";
+  const raw = input.agent_type || input.subagent_type || input.agent_name || input.agent || "";
+  return String(raw).trim().toLowerCase();
+}
+
+function decideSubagentInjection(personaId, input, ensembleInfo, env = process.env) {
+  const selfId = String(personaId || "").trim().toLowerCase();
+  const agentType = extractSubagentType(input);
+  if (agentType) {
+    if (UTILITY_SUBAGENT_TYPES.has(agentType)) return "skip";
+    const baseName = agentType.includes(":") ? agentType.split(":").pop() : agentType;
+    if (
+      baseName === selfId ||
+      baseName.startsWith(`${selfId}-`) ||
+      agentType.startsWith(`${selfId}:`)
+    ) {
+      return "full";
+    }
+    const knownPeers = new Set([
+      ...Object.keys(PERSONA_ROSTER_LINES),
+      ...((ensembleInfo && Array.isArray(ensembleInfo.installedPeers)) ? ensembleInfo.installedPeers : []),
+    ]);
+    for (const peer of knownPeers) {
+      if (peer !== selfId && (baseName === peer || baseName.startsWith(`${peer}-`) || agentType.startsWith(`${peer}:`))) {
+        return "skip";
+      }
+    }
+    if (!ensembleInfo || !ensembleInfo.isEnsemble || isEagerMode(env)) return "full";
+    return ensembleInfo.isEnsembleLeader ? "roster" : "skip";
+  }
+  if (!ensembleInfo || !ensembleInfo.isEnsemble || isEagerMode(env)) return "full";
+  return ensembleInfo.isEnsembleLeader ? "roster" : "skip";
 }
 
 module.exports = {
@@ -559,4 +717,13 @@ module.exports = {
   getDynamicPeerStoreFiles,
   detectCrewEnsemble,
   formatEnsembleRules,
+  isEagerMode,
+  shouldDeferSessionStart,
+  formatEnsembleRosterIndex,
+  matchesPersonaIntent,
+  isPersonaHydrated,
+  markPersonaHydrated,
+  clearPersonaHydrated,
+  extractSubagentType,
+  decideSubagentInjection,
 };

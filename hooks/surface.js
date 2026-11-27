@@ -24,11 +24,31 @@ const CREW_PEER_FILES = Object.freeze(
   }, {})
 );
 const RAINMAKER_INBOX_FILE = '.rainmaker-inbox.jsonl';
-const MAX_FILES = 3000;
+const MAX_FILES = 20000;
 const MAX_BYTES = 200 * 1024;
 const SRC = /\.(py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|java|kt|php|cs|swift|sh|yml|yaml)$/;
 const SKIP = /(^|\/)(node_modules|vendor|dist|build|out|target|coverage|\.next|\.venv|venv|__pycache__|\.claude|\.worktrees|\.maestro|Auto Run Docs|Plans|docs|benches|fuzz|tests?|__tests__|spec|fixtures|migrations)(\/|$)|\.(test|spec|min|d)\.[a-z]+$|_(test|spec)\.(rs|go|py|ts|js)$/;
 const SAFE_PATH = /^[\w.@+\/-]+$/; // a path with odd characters is skipped, never echoed
+
+function isUncapped(opts = {}, env = process.env) {
+  if (opts && opts.uncapped === true) return true;
+  if (opts && opts.uncapped === false) return false;
+  const srcEnv = (opts && opts.env) || env || process.env;
+  const raw = String((srcEnv && srcEnv.NECKBEARD_UNCAPPED) || '').trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
+function resolveFileCap(opts = {}, env = process.env) {
+  if (isUncapped(opts, env)) return { cap: Infinity, uncapped: true };
+  const custom = opts && opts.maxFiles !== undefined ? Number(opts.maxFiles) : NaN;
+  const cap = Number.isFinite(custom) && custom > 0 ? Math.floor(custom) : MAX_FILES;
+  return { cap, uncapped: false };
+}
+
+function formatCapNotice(totalFiles, cap, walkBounded = false) {
+  const countLabel = walkBounded ? `>${totalFiles}` : String(totalFiles);
+  return `File cap exceeded: ${countLabel} matching files exceed cap of ${cap} (scanned first ${cap}). Re-run with --uncapped or NECKBEARD_UNCAPPED=1 to scan all files.`;
+}
 
 const CATEGORIES = [
   ['entry points (HTTP, RPC, CLI, queues)', /\b(?:app|router|server|api|hono)\.(?:get|post|put|patch|delete|all|use|route)\s*\(|@(?:app|router|bp)\.(?:route|get|post|put|delete)\b|@(?:Get|Post|Put|Delete|Patch|RequestMapping|Controller)\b|\bexport\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\b|\bhttp\.HandleFunc\b|\bfetch\s*\(\s*req(?:uest)?\b|\baddEventListener\(\s*['"]fetch['"]|\bargparse\b|\bprocess\.argv\b|\bconsumer\.|\bon_message\b/],
@@ -291,22 +311,30 @@ function findSensitiveMatch(text) {
   return null;
 }
 
-function listFiles(root) {
+function listFiles(root, opts = {}) {
+  const { cap, uncapped } = resolveFileCap(opts);
   try {
     const out = execFileSync('git', ['ls-files', '-z'], {
-      cwd: root, encoding: 'utf8', timeout: 2000, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+      cwd: root,
+      encoding: 'utf8',
+      timeout: uncapped ? 15000 : 5000,
+      maxBuffer: 128 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
     const files = out.split('\0').filter(Boolean);
     if (files.length) return files;
   } catch { /* not a git repo */ }
   const out = [];
+  const walkLimit = Number.isFinite(cap) ? Math.max(cap * 4, 80000) : Infinity;
   (function walk(dir, depth) {
-    if (depth > 6 || out.length > MAX_FILES) return;
+    if (depth > 8 || out.length >= walkLimit) return;
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
+      if (out.length >= walkLimit) return;
       if (e.name === '.git' || e.name === 'node_modules') continue;
       if (e.name.startsWith('.') && e.name !== '.github') continue;
+      if (e.isSymbolicLink && e.isSymbolicLink()) continue;
       const rel = path.relative(root, path.join(dir, e.name)).split(path.sep).join('/');
       if (e.isDirectory()) { if (!SKIP.test(rel + '/')) walk(path.join(dir, e.name), depth + 1); } else out.push(rel);
     }
@@ -314,8 +342,25 @@ function listFiles(root) {
   return out;
 }
 
-function buildSurface(root) {
-  const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f) && !/\.(yml|yaml)$/.test(f)).slice(0, MAX_FILES);
+function selectScanFiles(root, filterFn, opts = {}, sortFn = null) {
+  const { cap, uncapped } = resolveFileCap(opts);
+  const all = listFiles(root, opts);
+  const matched = all.filter(filterFn);
+  if (typeof sortFn === 'function') matched.sort(sortFn);
+  const totalFiles = matched.length;
+  const truncated = !uncapped && totalFiles > cap;
+  const files = truncated ? matched.slice(0, cap) : matched;
+  const notice = truncated ? formatCapNotice(totalFiles, cap) : '';
+  return { files, totalFiles, cap, uncapped, truncated, notice };
+}
+
+function buildSurface(root, opts = {}) {
+  const scan = selectScanFiles(
+    root,
+    (f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f) && !/\.(yml|yaml)$/.test(f),
+    opts
+  );
+  const files = scan.files;
   const hits = CATEGORIES.map(() => []);
   for (const f of files) {
     let text;
@@ -337,8 +382,11 @@ function buildSurface(root) {
     lines.push(line);
     used += line.length + 1;
   });
-  if (!lines.length) return '';
-  return 'Attack-surface map (files matched by pattern; read them before changing code that crosses these boundaries):\n' + lines.join('\n');
+  if (!lines.length && !scan.truncated) return '';
+  const body = lines.length
+    ? 'Attack-surface map (files matched by pattern; read them before changing code that crosses these boundaries):\n' + lines.join('\n')
+    : 'Attack-surface map (no pattern hits in scanned slice):';
+  return scan.truncated ? `${body}\nNotice: ${scan.notice}` : body;
 }
 
 // High-precision multi-language boundary sink detectors (JS/TS, Rust, Python, Go, Swift, Java, Ruby)
@@ -359,14 +407,23 @@ const BOUNDARY_DETECTORS = {
 };
 
 // Builds the concise two-tier (external & internal) trust-boundary map for a project.
-function buildBoundaryMap(root = process.cwd(), maxPerCategory = 16) {
-  let files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
+function buildBoundaryMap(root = process.cwd(), maxPerCategory = 16, opts = {}) {
+  if (typeof maxPerCategory === 'object' && maxPerCategory !== null) {
+    opts = maxPerCategory;
+    maxPerCategory = 16;
+  }
   // Prioritise core production directories (src/, crates/, apps/, packages/, hooks/, lib/, functions/, scripts/) before examples/
-  files.sort((a, b) => {
-    const aEx = /(^|\/)(examples?|demo|samples?|benchmarks?)\//i.test(a) ? 1 : 0;
-    const bEx = /(^|\/)(examples?|demo|samples?|benchmarks?)\//i.test(b) ? 1 : 0;
-    return aEx - bEx || a.localeCompare(b);
-  });
+  const scan = selectScanFiles(
+    root,
+    (f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f),
+    opts,
+    (a, b) => {
+      const aEx = /(^|\/)(examples?|demo|samples?|benchmarks?)\//i.test(a) ? 1 : 0;
+      const bEx = /(^|\/)(examples?|demo|samples?|benchmarks?)\//i.test(b) ? 1 : 0;
+      return aEx - bEx || (a < b ? -1 : a > b ? 1 : 0);
+    }
+  );
+  const files = scan.files;
   const ext = { ingress: [], egress: [], supply: [] };
   const int = { auth: [], data: [], exec: [], ai: [] };
   const limit = Math.max(1, Number(maxPerCategory) || 16);
@@ -412,7 +469,9 @@ function buildBoundaryMap(root = process.cwd(), maxPerCategory = 16) {
     if (BOUNDARY_DETECTORS.ai.test(text)) add(int.ai, `${f}->ai`);
   }
 
-  return { external: ext, internal: int };
+  return scan.truncated
+    ? { external: ext, internal: int, truncated: true, totalFiles: scan.totalFiles, cap: scan.cap, notice: scan.notice }
+    : { external: ext, internal: int };
 }
 
 function moduleNameForRelPath(relPath) {
@@ -426,8 +485,22 @@ function moduleNameForRelPath(relPath) {
 }
 
 // Quantifies project module architecture, boundary density, cross-boundary bridges, and inter-module import/data flows.
-function buildArchitectureMap(root = process.cwd(), maxModules = 16, maxFlows = 24) {
-  const files = listFiles(root).filter((f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f)).slice(0, MAX_FILES);
+function buildArchitectureMap(root = process.cwd(), maxModules = 16, maxFlows = 24, opts = {}) {
+  if (typeof maxModules === 'object' && maxModules !== null) {
+    opts = maxModules;
+    maxModules = 16;
+    maxFlows = 24;
+  } else if (typeof maxFlows === 'object' && maxFlows !== null) {
+    opts = maxFlows;
+    maxFlows = 24;
+  }
+  const scan = selectScanFiles(
+    root,
+    (f) => SRC.test(f) && !SKIP.test(f) && SAFE_PATH.test(f),
+    opts,
+    (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+  );
+  const files = scan.files;
   const modStats = new Map();
   const knownModules = new Set();
   const fileContents = [];
@@ -539,7 +612,7 @@ function buildArchitectureMap(root = process.cwd(), maxModules = 16, maxFlows = 
   const modules = sortedMods.map((ms) => `${ms.name}:${classifyRole(ms)}(${ms.files}f,${ms.bridges}b)`);
   const flows = [...flowSet].slice(0, Math.max(1, Number(maxFlows) || 24));
 
-  return {
+  const archResult = {
     fileCount: files.length,
     moduleCount: modStats.size,
     boundaryFileCount,
@@ -548,6 +621,13 @@ function buildArchitectureMap(root = process.cwd(), maxModules = 16, maxFlows = 
     modules,
     flows,
   };
+  if (scan.truncated) {
+    archResult.truncated = true;
+    archResult.totalFiles = scan.totalFiles;
+    archResult.cap = scan.cap;
+    archResult.notice = scan.notice;
+  }
+  return archResult;
 }
 
 function flattenBoundaries(b = {}) {
@@ -573,12 +653,12 @@ function diffBoundaryMap(baseline = {}, current = {}) {
   return { added, removed };
 }
 
-function detectBoundaryDrift(root = process.cwd(), env = process.env) {
+function detectBoundaryDrift(root = process.cwd(), env = process.env, opts = {}) {
   const cfg = readProjectConfig(root, env);
   if (!cfg || !cfg.boundaries) return { added: [], removed: [] };
   const hasSaved = flattenBoundaries(cfg.boundaries).length > 0;
   if (!hasSaved) return { added: [], removed: [] };
-  return diffBoundaryMap(cfg.boundaries, buildBoundaryMap(root));
+  return diffBoundaryMap(cfg.boundaries, buildBoundaryMap(root, 16, { ...opts, env }));
 }
 
 function sanitizeLoad(load) {
@@ -839,23 +919,24 @@ function readProjectConfig(root = process.cwd(), env = process.env) {
   return null;
 }
 
-function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env) {
+function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env, opts = {}) {
+  const scanOpts = { ...opts, env };
   const existing = readProjectConfig(root, env) || {
     shared: true,
     load: '',
     boundaryLoad: {},
-    boundaries: buildBoundaryMap(root),
+    boundaries: buildBoundaryMap(root, 16, scanOpts),
   };
   const nextBoundaryLoad = { ...(existing.boundaryLoad || {}), ...(patch.boundaryLoad || {}) };
   for (const [k, v] of Object.entries(nextBoundaryLoad)) {
     if (v === null || v === '') delete nextBoundaryLoad[k];
   }
   const candidateBounds = patch.boundaries || existing.boundaries;
-  const resolvedBounds = flattenBoundaries(candidateBounds).length > 0 ? candidateBounds : buildBoundaryMap(root);
+  const resolvedBounds = flattenBoundaries(candidateBounds).length > 0 ? candidateBounds : buildBoundaryMap(root, 16, scanOpts);
   const candidateArch = patch.architecture || existing.architecture;
   const resolvedArch = (candidateArch && Array.isArray(candidateArch.modules) && candidateArch.modules.length > 0)
     ? candidateArch
-    : buildArchitectureMap(root);
+    : buildArchitectureMap(root, 16, 24, scanOpts);
   const merged = sanitizeProjectConfig({
     shared: patch.shared !== undefined ? patch.shared : existing.shared,
     load: patch.load !== undefined ? patch.load : existing.load,
@@ -884,7 +965,7 @@ function writeProjectConfig(root = process.cwd(), patch = {}, env = process.env)
 }
 
 // Ensures a project's persisted boundary map is populated and refreshed if empty, referencing deleted files, or older than maxAgeMs.
-function ensureFreshBoundaryMap(root = process.cwd(), env = process.env, maxAgeMs = DEFAULT_MAP_MAX_AGE_MS) {
+function ensureFreshBoundaryMap(root = process.cwd(), env = process.env, maxAgeMs = DEFAULT_MAP_MAX_AGE_MS, opts = {}) {
   const cfg = readProjectConfig(root, env);
   if (!cfg) return null;
   const activeFile = cfg.shared === false ? localProjectFile(root, env) : sharedProjectFile(root);
@@ -907,18 +988,20 @@ function ensureFreshBoundaryMap(root = process.cwd(), env = process.env, maxAgeM
     }
   }
   if (needsRefresh || !cfg.architecture || !Array.isArray(cfg.architecture.modules) || cfg.architecture.modules.length === 0) {
+    const scanOpts = { ...opts, env };
     return writeProjectConfig(root, {
-      boundaries: buildBoundaryMap(root),
-      architecture: buildArchitectureMap(root),
-    }, env);
+      boundaries: buildBoundaryMap(root, 16, scanOpts),
+      architecture: buildArchitectureMap(root, 16, 24, scanOpts),
+    }, env, scanOpts);
   }
   return cfg;
 }
 
 // Formats the concise, token-efficient load + per-boundary overrides + external/internal map + boundary drift alert.
 function formatProjectContext(root = process.cwd(), env = process.env, opts = {}) {
+  const scanOpts = { ...opts, env };
   const cfg = readProjectConfig(root, env);
-  const liveMap = buildBoundaryMap(root);
+  const liveMap = opts.liveMap || buildBoundaryMap(root, 16, scanOpts);
   const hasSavedBounds = Boolean(cfg && cfg.boundaries && flattenBoundaries(cfg.boundaries).length > 0);
   const map = hasSavedBounds ? cfg.boundaries : liveMap;
   const ext = (map && map.external) || {};
@@ -946,9 +1029,9 @@ function formatProjectContext(root = process.cwd(), env = process.env, opts = {}
   }
   if (extLine) lines.push(`Trust Map [ext] ${extLine}`);
   if (intLine) lines.push(`Trust Map [int] ${intLine}`);
-  const arch = (cfg && cfg.architecture && Array.isArray(cfg.architecture.modules) && cfg.architecture.modules.length > 0)
+  const arch = opts.architecture || ((cfg && cfg.architecture && Array.isArray(cfg.architecture.modules) && cfg.architecture.modules.length > 0)
     ? cfg.architecture
-    : buildArchitectureMap(root);
+    : buildArchitectureMap(root, 16, 24, scanOpts));
   if (arch && arch.modules && arch.modules.length > 0) {
     const flowPart = arch.flows && arch.flows.length > 0 ? ` | flows:${arch.flows.slice(0, 4).join(',')}` : '';
     lines.push(`Arch Map [${arch.moduleCount} mods · ${arch.bridgeCount} bridges] ${arch.modules.slice(0, 4).join(',')}${flowPart}`);
@@ -963,6 +1046,13 @@ function formatProjectContext(root = process.cwd(), env = process.env, opts = {}
   if (opts.includeCrewContext !== false) {
     const crewLines = formatCrewContext(root);
     if (crewLines) lines.push(crewLines);
+  }
+  const capNotice = liveMap.notice || (arch && arch.notice) || '';
+  if (capNotice) {
+    const noticeLine = `Notice: ${capNotice}`;
+    const bodyBudget = Math.max(0, MAP_BUDGET - noticeLine.length - 1);
+    const body = lines.join('\n').slice(0, bodyBudget);
+    return body ? `${body}\n${noticeLine}` : noticeLine;
   }
   return lines.join('\n').slice(0, MAP_BUDGET);
 }
@@ -1168,6 +1258,12 @@ module.exports = {
   CREW_PEER_FILES,
   RAINMAKER_INBOX_FILE,
   MAX_JSONL_LINE_BYTES,
+  MAX_FILES,
+  isUncapped,
+  resolveFileCap,
+  formatCapNotice,
+  listFiles,
+  selectScanFiles,
   parseLoadMetrics,
   checkRiskLoadExpiry,
   readProjectConfig,
@@ -1185,13 +1281,20 @@ module.exports = {
 
 if (require.main === module) {
   const args = process.argv.slice(2);
+  const uncapped = args.includes('--uncapped') || isUncapped({}, process.env);
+  const targetDir = args.find((a) => !a.startsWith('-')) || process.cwd();
+  const scanOpts = { uncapped };
   if (args.includes('--map')) {
-    const targetDir = args.find((a) => !a.startsWith('-')) || process.cwd();
-    const boundaries = buildBoundaryMap(targetDir);
-    const architecture = buildArchitectureMap(targetDir);
-    writeProjectConfig(targetDir, { boundaries, architecture });
-    process.stdout.write(formatProjectContext(targetDir) + '\n');
+    const boundaries = buildBoundaryMap(targetDir, 16, scanOpts);
+    const architecture = buildArchitectureMap(targetDir, 16, 24, scanOpts);
+    writeProjectConfig(targetDir, { boundaries, architecture }, process.env, scanOpts);
+    const notice = boundaries.notice || architecture.notice;
+    if (notice) process.stderr.write(`[neckbeard] WARNING: ${notice}\n`);
+    process.stdout.write(formatProjectContext(targetDir, process.env, { ...scanOpts, liveMap: boundaries, architecture }) + '\n');
   } else {
-    process.stdout.write(buildSurface(args[0] || process.cwd()) + '\n');
+    const out = buildSurface(targetDir, scanOpts);
+    const noticeMatch = /\nNotice:\s+(.+)$/.exec(out);
+    if (noticeMatch) process.stderr.write(`[neckbeard] WARNING: ${noticeMatch[1]}\n`);
+    process.stdout.write(out + '\n');
   }
 }

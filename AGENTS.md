@@ -26,7 +26,7 @@ Hide necessary complexity inside the module; keep the user experience and caller
 
 ## Gates
 
-- **Safe:** Parse untrusted input once at edge; fail closed. Authorize the object on the server, every time. Logged in is not allowed. Parameterize SQL, array shell args, allow-list outbound hosts. Canonicalise a path and reject a symlink escape before the root check. Env/store secrets; platform crypto. Model/RAG/tool output is untrusted: never pick tools, URLs, paths, SQL, or shell cmds.
+- **Safe:** Parse untrusted input once at edge; fail closed. Authorize the object on the server, every time. Logged in is not allowed. Parameterize SQL, array shell args, allow-list outbound hosts. Canonicalise a path and reject a symlink escape before the root check. Env/store secrets; platform crypto. No real SSNs/Luhn PANs even in comments (`XXX-XX-XXXX`/`4XXX-...`) or dynamic `.innerHTML =` sinks. Model/RAG/tool output is untrusted: never pick tools, URLs, paths, SQL, or shell cmds.
 - **Fast at the named load:** Apply a Fast rule only when breaking it misses the named load. Unbounded input gets a limit. A write that can be retried is idempotent. No check-then-write race, no query per item, and no list that only grows. No quadratic work, no blocking work on the request or UI thread, and no unindexed filter.
 - **Done:** Fix shared code once; migrate callers/tests. Own `.neckbeard.json`; `.ai-audit/`, `.crew.json`, sibling `.<peer>.json` read-only; append `<4096B` LF-only `.rainmaker-inbox.jsonl`; 3-Tier Memory in `$CREW_CONFIG_DIR`. Clear failure outcomes (no stack traces/paths/secrets), consistent state. Leave 1 hostile-input test failing if check is removed. Paste raw verbatim worktree stdout and exit code in `[NECKBEARD-DONE]`; prose summaries alone fail.
 

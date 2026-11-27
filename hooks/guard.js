@@ -50,9 +50,16 @@ const SECRETS = [
   ['Stripe live key', /\b(?:sk|rk)_live_[A-Za-z0-9]{20,}/],
   ['Google API key', /\bAIza[0-9A-Za-z_-]{35}\b/],
   ['Anthropic API key', /\bsk-ant-[A-Za-z0-9_-]{20,}/],
-  ['OpenAI API key', /\bsk-[A-Za-z0-9_-]*T3BlbkFJ[A-Za-z0-9_-]+/],
+  ['OpenAI API key', /\bsk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]*T3BlbkFJ[A-Za-z0-9_-]+)/],
   ['npm token', /\bnpm_[A-Za-z0-9]{36}\b/],
 ];
+
+// Source Comment & Fixture DLP: real-format US SSNs and Luhn-valid payment card PANs, plus non-empty .innerHTML sinks.
+const REAL_SSN_RE = /(?<![0-9A-Za-z_.-])(?!000|666|9\d\d)(\d{3})-(?!00)(\d{2})-(?!0000)(\d{4})(?![0-9A-Za-z_.-])/g;
+const PAN_CANDIDATE_RE = /(?<![0-9A-Za-z_])([2-6]\d{3}(?:[ -]?\d{4}){2,3}(?:[ -]?\d{1,3})?|3\d{3}[ -]?\d{6}[ -]?\d{4,5})(?![0-9A-Za-z_])/g;
+const CODE_SINK_EXT_RE = /\.(?:js|mjs|cjs|ts|tsx|jsx|html?|vue|svelte)$/i;
+const DYNAMIC_INNER_HTML_RE = /\.(?:innerHTML|outerHTML)\s*(?:\+=|=(?!=))\s*([^\n;]+)/g;
+const EMPTY_STRING_RHS_RE = /^(?:''|""|``)\s*(?:[;,)}\]]|$)/;
 
 // Paranoid adds a generic "credential assigned a literal" rule; placeholders pass.
 const GENERIC_SECRET = /\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)\b\s*[:=]\s*["'`]([^"'`\s]{12,})["'`]/i;
@@ -309,9 +316,17 @@ function findCrewPolicyTamper(tool, input) {
   return null;
 }
 
+const ACTIVE_PERSONA_RE = /^[a-z][a-z0-9-]{0,31}$/;
+
+function getActiveCrewPersona(env = process.env) {
+  const raw = String((env && (env.CREW_PERSONA_ID || env.CREW_ACTIVE_PERSONA)) || '').trim().toLowerCase();
+  return ACTIVE_PERSONA_RE.test(raw) ? raw : '';
+}
+
 // Dynamically builds the set of ALL OTHER registered + built-in sibling persona store files.
 function getSiblingStoreSet(env = process.env) {
-  const peerFiles = getDynamicPeerStoreFiles('neckbeard', env);
+  const storeOwner = getActiveCrewPersona(env) || 'neckbeard';
+  const peerFiles = getDynamicPeerStoreFiles(storeOwner, env);
   return new Set(Object.values(peerFiles).map((f) => String(f).toLowerCase()));
 }
 
@@ -458,6 +473,91 @@ function findUnsafe(text, list) {
   return null;
 }
 
+function isLuhnValid(digits) {
+  if (!/^\d{13,19}$/.test(digits)) return false;
+  if (/^(\d)\1+$/.test(digits)) return false;
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let n = digits.charCodeAt(i) - 48;
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+function isKnownCardIin(digits) {
+  const len = digits.length;
+  if (/^4/.test(digits) && (len === 13 || len === 16 || len === 19)) return true;
+  if (/^(?:5[1-5]|222[1-9]|22[3-9]\d|2[3-6]\d{2}|27[01]\d|2720)/.test(digits) && len === 16) return true;
+  if (/^3[47]/.test(digits) && len === 15) return true;
+  if (/^(?:6011|65|64[4-9])/.test(digits) && len === 16) return true;
+  if (/^35(?:2[89]|[3-8]\d)/.test(digits) && len === 16) return true;
+  if (/^(?:30[0-5]|36|38)/.test(digits) && (len === 14 || len === 16)) return true;
+  return false;
+}
+
+function findSourceDlpViolation(text) {
+  const raw = String(text || '');
+  if (!raw) return null;
+  REAL_SSN_RE.lastIndex = 0;
+  const ssnMatch = REAL_SSN_RE.exec(raw);
+  REAL_SSN_RE.lastIndex = 0;
+  if (ssnMatch) {
+    return {
+      kind: 'real-format SSN literal in source/comment (replace with masked placeholder XXX-XX-XXXX)',
+      line: lineOf(raw, ssnMatch.index),
+    };
+  }
+  PAN_CANDIDATE_RE.lastIndex = 0;
+  let pm;
+  while ((pm = PAN_CANDIDATE_RE.exec(raw)) !== null) {
+    const digits = pm[1].replace(/[ -]/g, '');
+    if (isKnownCardIin(digits) && isLuhnValid(digits)) {
+      const idx = pm.index;
+      PAN_CANDIDATE_RE.lastIndex = 0;
+      return {
+        kind: 'Luhn-valid payment card PAN literal in source/comment (replace with masked placeholder 4XXX-XXXX-XXXX-XXXX)',
+        line: lineOf(raw, idx),
+      };
+    }
+  }
+  PAN_CANDIDATE_RE.lastIndex = 0;
+  return null;
+}
+
+function stripCommentsPreserveLines(text) {
+  return String(text || '')
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
+}
+
+function findDynamicInnerHtml(text, where) {
+  const target = String(where || '');
+  if (target && target !== 'this file' && !CODE_SINK_EXT_RE.test(target)) return null;
+  const stripped = stripCommentsPreserveLines(text);
+  DYNAMIC_INNER_HTML_RE.lastIndex = 0;
+  let m;
+  while ((m = DYNAMIC_INNER_HTML_RE.exec(stripped)) !== null) {
+    const rhs = String(m[1] || '').trim();
+    if (!EMPTY_STRING_RHS_RE.test(rhs)) {
+      const idx = m.index;
+      DYNAMIC_INNER_HTML_RE.lastIndex = 0;
+      return {
+        kind: 'non-empty .innerHTML/.outerHTML assignment (DOM XSS sink; use textContent/createElement or empty string clearing)',
+        line: lineOf(stripped, idx),
+      };
+    }
+  }
+  DYNAMIC_INNER_HTML_RE.lastIndex = 0;
+  return null;
+}
+
 // What a tool call would put on disk or run. Edits are judged by their new text only,
 // so a secret already in a file never blocks unrelated edits to it.
 function payload(tool, input) {
@@ -568,6 +668,20 @@ function check(tool, input, level, env = process.env) {
       'and use an obviously fake value in tests. If the user really wants this, ask them to turn the guard off with /neckbeard lite.';
   }
 
+  // 7b. Source Comment & Fixture DLP (real-format SSNs, Luhn-valid PANs) + non-empty .innerHTML/.outerHTML XSS sink check
+  if (FILE_TOOLS.has(t)) {
+    const dlp = findSourceDlpViolation(text);
+    if (dlp) {
+      return `neckbeard blocked this ${tool}: Source DLP violation — ${dlp.kind} (${where}, line ${dlp.line}). ` +
+        'Use masked placeholders (XXX-XX-XXXX, 4XXX-XXXX-XXXX-XXXX) in comments, docs, and fixtures.';
+    }
+    const innerHtmlSink = findDynamicInnerHtml(text, where);
+    if (innerHtmlSink) {
+      return `neckbeard blocked this ${tool}: DOM sink violation — ${innerHtmlSink.kind} (${where}, line ${innerHtmlSink.line}). ` +
+        'Build DOM nodes safely with textContent / createElement (only empty string clearing `= ""` is allowed).';
+    }
+  }
+
   // 8. Paranoid unsafe operations
   if (level === 'paranoid') {
     const unsafe = findUnsafe(text, SHELL_TOOLS.has(t) ? UNSAFE_SHELL : UNSAFE_CODE);
@@ -583,6 +697,9 @@ function check(tool, input, level, env = process.env) {
 module.exports = {
   check,
   findSecret,
+  isLuhnValid,
+  findSourceDlpViolation,
+  findDynamicInnerHtml,
   findVibesTamper,
   findCrewPolicyTamper,
   findSiblingStoreTamper,
@@ -607,9 +724,13 @@ if (require.main === module) {
               ? 'memory-poisoning'
               : reason.includes('.neckbeard.json') || reason.includes('crew store')
                 ? 'config-censor'
-                : reason.includes('(paranoid)')
-                  ? 'unsafe-op'
-                  : 'secret';
+                : reason.includes('Source DLP')
+                  ? 'source-dlp'
+                  : reason.includes('DOM sink')
+                    ? 'dom-xss-sink'
+                    : reason.includes('(paranoid)')
+                      ? 'unsafe-op'
+                      : 'secret';
       recordGuardBlock(input.session_id, kind, input.cwd || process.cwd());
       emitDeny(reason);
     }

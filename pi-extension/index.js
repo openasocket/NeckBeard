@@ -34,7 +34,11 @@ export function parseNeckbeardCommand(rawInput, currentLevel = DEFAULT_LEVEL) {
   const parts = trimmed.split(/\s+/);
   const verb = parts[0].toLowerCase();
   if (verb === 'status') return { type: 'status' };
-  if (verb === 'map') return { type: 'map' };
+  if (verb === 'map') {
+    return parts.slice(1).some((t) => t.toLowerCase() === '--uncapped')
+      ? { type: 'map', uncapped: true }
+      : { type: 'map' };
+  }
   if (verb === 'load') return { type: 'load', value: trimmed.slice(4).trim() };
   if (verb === 'share') {
     const toggle = (parts[1] || '').toLowerCase();
@@ -111,12 +115,18 @@ export default function registerNeckbeardPi(host) {
         return;
       }
       if (cmd.type === 'map') {
-        writeProjectConfig(process.cwd(), {
-          boundaries: buildBoundaryMap(process.cwd()),
-          architecture: buildArchitectureMap(process.cwd()),
-        });
+        const scanOpts = cmd.uncapped ? { uncapped: true } : {};
+        const boundaries = buildBoundaryMap(process.cwd(), 16, scanOpts);
+        const architecture = buildArchitectureMap(process.cwd(), 16, 24, scanOpts);
+        writeProjectConfig(process.cwd(), { boundaries, architecture }, process.env, scanOpts);
         renderStatusStrip(ctx);
-        ctx?.ui?.notify?.('Refreshed External & Internal Trust-Boundary & Architecture Map.', 'info');
+        const capNotice = boundaries.notice || architecture.notice;
+        ctx?.ui?.notify?.(
+          capNotice
+            ? `Refreshed Trust-Boundary & Architecture Map (truncated: ${capNotice})`
+            : 'Refreshed External & Internal Trust-Boundary & Architecture Map.',
+          capNotice ? 'warning' : 'info'
+        );
         return;
       }
       if (cmd.type === 'share') {

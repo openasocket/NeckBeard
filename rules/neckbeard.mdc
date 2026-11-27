@@ -1,0 +1,14 @@
+---
+description: "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished."
+alwaysApply: false
+---
+
+# NeckBeard (`/neckbeard`) — Cursor Agent Rule
+
+Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.
+
+- **Gates:** Safe · Fast@Load · Done
+- **Skills:** `/neckbeard`, `/neckbeard-audit`, `/neckbeard-debt`, `/neckbeard-gain`, `/neckbeard-map`, `/neckbeard-memory`, `/neckbeard-review`
+- **Primary Ruleset:** Follow `skills/neckbeard/SKILL.md` and `AGENTS.md` when active.
+- **Single-Owner Store:** `.neckbeard.json` (never directly mutate sibling Crew stores).
+- **Nested-Subagent Discipline:** When running as a delegated subagent, execute the assigned scope directly without spawning nested subagents.

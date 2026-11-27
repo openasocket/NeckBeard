@@ -145,7 +145,8 @@ In Claude Code (CLI and Desktop), NeckBeard loads [`hooks/claude-band.json`](hoo
 | **Pi (`pi`) & Oh My Pi (`omp`)** | Load [`pi-extension/index.js`](pi-extension/index.js) via `"pi"` in [`package.json`](package.json) for a live TUI status bar (`● 🧔 neckbeard: 🛡️ FULL`), turn-by-turn rule/map injection, and `/neckbeard*` commands. |
 | **OpenCode & Kilo Code** | Load [`.opencode/plugins/neckbeard.mjs`](.opencode/plugins/neckbeard.mjs) to inject the ruleset, load target, and trust-boundary map every turn and register the five skills. |
 | **Gemini CLI** | Loads [`gemini-extension.json`](gemini-extension.json), setting `contextFileName` to [`AGENTS.md`](AGENTS.md) and discovering `skills/`. |
-| **Cursor, Windsurf, and Kiro** | Do not read `AGENTS.md` unless their own rules file (`.cursor/rules/`, `.windsurf/rules/`, `.kiro/steering/`) includes it. |
+| **Cursor** | Native Cursor plugin: loads [`.cursor-plugin/plugin.json`](.cursor-plugin/plugin.json), lazy rule [`rules/neckbeard.mdc`](rules/neckbeard.mdc) (`alwaysApply: false`), all skills & subagents, and [`hooks/cursor-hooks.json`](hooks/cursor-hooks.json) via [`hooks/cursor-adapter.js`](hooks/cursor-adapter.js) (`sessionStart`, `subagentStart`, `beforeSubmitPrompt`, `preToolUse` with exit code `2` guard enforcement). |
+| **Windsurf and Kiro** | Do not read `AGENTS.md` unless their own rules file (`.windsurf/rules/`, `.kiro/steering/`) includes it. |
 
 Full per-host install guide and adapter matrix: **[INSTALL.md](INSTALL.md)** and **[docs/agent-portability.md](docs/agent-portability.md)**.
 
@@ -155,7 +156,7 @@ Full per-host install guide and adapter matrix: **[INSTALL.md](INSTALL.md)** and
 
 **One-Command Cross-Platform Auto-Installer & Updater (Windows, macOS, Linux):**
 
-Once you have cloned or downloaded NeckBeard on a system, run one command to automatically detect and install/update **every compatible AI coding agent harness** on your machine (`Claude Code`, `Codex`, `GitHub Copilot CLI`, `Grok CLI`, `Antigravity CLI`, `Gemini CLI`, `Pi / Oh My Pi`, `OpenCode / Kilo Code`) and rebuild your local Command Center:
+Once you have cloned or downloaded NeckBeard on a system, run one command to automatically detect and install/update **every compatible AI coding agent harness** on your machine (`Claude Code`, `Codex`, `GitHub Copilot CLI`, `Grok CLI`, `Antigravity CLI`, `Gemini CLI`, `Pi / Oh My Pi`, `OpenCode / Kilo Code`, `Cursor`) and rebuild your local Command Center:
 
 ```bash
 node scripts/install-all.js
@@ -209,7 +210,15 @@ agy plugin install https://github.com/openasocket/NeckBeard
 gemini extensions install https://github.com/openasocket/NeckBeard
 ```
 
-**Any other agent:** Copy `AGENTS.md` into the root of a project whose host does not load this plugin. Cursor, Windsurf, and Kiro do not read `AGENTS.md` unless their own rules file includes it. Full per-host details and configuration: **[INSTALL.md](INSTALL.md)**.
+**Cursor:**
+
+```bash
+node scripts/install-all.js
+```
+
+Installs the native Cursor plugin into `~/.cursor/plugins/neckbeard`, registers lazy rule `~/.cursor/rules/neckbeard.mdc`, syncs skills & agents, and idempotently merges the v1 hook entries into `~/.cursor/hooks.json`.
+
+**Any other agent:** Copy `AGENTS.md` into the root of a project whose host does not load this plugin. Windsurf and Kiro do not read `AGENTS.md` unless their own rules file includes it. Full per-host details and configuration: **[INSTALL.md](INSTALL.md)**.
 
 ---
 

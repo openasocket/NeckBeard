@@ -111,9 +111,17 @@ gemini extensions install https://github.com/openasocket/NeckBeard
 
 Loads [`gemini-extension.json`](gemini-extension.json), which sets `contextFileName` to [`AGENTS.md`](AGENTS.md) and discovers `skills/` without auto-loading Claude/Codex hooks (`hooks/hooks.json` is intentionally absent).
 
-## Any Other Host (Cursor, Windsurf, Kiro, OpenCode, Cline, Zed, Amp, Droid)
+## Cursor
 
-Copy `AGENTS.md` into the root of a project whose host does not load this plugin. Cursor, Windsurf, and Kiro do not read `AGENTS.md` unless their own rules file includes it (for example, reference `@AGENTS.md` from `.cursor/rules/`, `.windsurf/rules/`, or `.kiro/steering/`).
+```bash
+node scripts/install-all.js
+```
+
+Loads [`.cursor-plugin/plugin.json`](.cursor-plugin/plugin.json) and [`.cursor-plugin/marketplace.json`](.cursor-plugin/marketplace.json), installs the lazy rule [`rules/neckbeard.mdc`](rules/neckbeard.mdc) (`alwaysApply: false`), syncs `skills/` and `agents/` under `~/.cursor/`, and merges [`hooks/cursor-hooks.json`](hooks/cursor-hooks.json) into `~/.cursor/hooks.json` via [`hooks/cursor-adapter.js`](hooks/cursor-adapter.js) (`sessionStart`, `subagentStart`, `beforeSubmitPrompt`, `preToolUse` with fail-closed exit code `2`).
+
+## Any Other Host (Windsurf, Kiro, Cline, Zed, Amp, Droid)
+
+Copy `AGENTS.md` into the root of a project whose host does not load this plugin. Windsurf and Kiro do not read `AGENTS.md` unless their own rules file includes it (for example, reference `@AGENTS.md` from `.windsurf/rules/` or `.kiro/steering/`).
 
 ## Configuration & Environment Variables
 

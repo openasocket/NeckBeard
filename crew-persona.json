@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "neckbeard",
   "handle": "NeckBeard",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "kind": "universal",
   "squad": "build",
   "pipelinePriority": 40,

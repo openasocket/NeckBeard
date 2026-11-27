@@ -493,6 +493,13 @@ function detectCrewEnsemble(selfId, cwd = process.cwd(), env = process.env) {
       continue;
     }
 
+    // Cursor IDE / CLI (.cursor/plugins/<id> & .cursor/skills/<id>)
+    const _cursorBase = (safeEnv && safeEnv.CURSOR_CONFIG_DIR) ? path.resolve(String(safeEnv.CURSOR_CONFIG_DIR)) : path.join(home, '.cursor');
+    if (fs.existsSync(path.join(_cursorBase, 'plugins', id)) || fs.existsSync(path.join(_cursorBase, 'skills', id))) {
+      detected.add(id);
+      continue;
+    }
+
     // 9. Repo-local single-owner store (.{id}.json)
     if (cwd && safeExists(path.join(cwd, desc.storeFile))) {
       detected.add(id);

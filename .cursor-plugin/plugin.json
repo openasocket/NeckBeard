@@ -1,0 +1,22 @@
+{
+  "name": "neckbeard",
+  "displayName": "NeckBeard",
+  "version": "0.3.8",
+  "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.",
+  "author": {
+    "name": "neckbeard contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "security",
+    "performance",
+    "scalability",
+    "code-review",
+    "yagni",
+    "vibes"
+  ],
+  "rules": "./rules",
+  "skills": "./skills",
+  "agents": "./agents",
+  "hooks": "./hooks/cursor-hooks.json"
+}

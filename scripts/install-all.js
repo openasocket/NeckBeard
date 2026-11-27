@@ -10,6 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { syncCursorHarness, mergeCursorHooksJson } = require('./cursor-sync');
 const {
   getCrewConfigDir,
   getPersonasRegistryDir,
@@ -35,6 +36,8 @@ const SYNC_ITEMS = [
   'gemini-extension.json',
   '.crew',
   '.claude-plugin',
+  '.cursor-plugin',
+  'rules',
   '.codex-plugin',
   '.github',
   '.grok-plugin',
@@ -618,6 +621,7 @@ function syncAllHarnesses(options = {}) {
     syncGeminiCli(bins.gemini, home, version, opts),
     syncCopilotCli(bins.copilot, version, opts),
     ...syncPiAndOpenCode(bins, home, version, opts),
+    syncCursorHarness({ rootDir: ROOT, pluginId: 'neckbeard', version, env, home, dryRun, syncItems: SYNC_ITEMS }),
   ];
 
   const presence = registerPersonaPresence({ env, dryRun });
@@ -678,6 +682,8 @@ if (require.main === module) {
 }
 
 module.exports = {
+  syncCursorHarness,
+  mergeCursorHooksJson,
   findBinaryOnPath,
   mergeGrokEnabledPluginsToml,
   registerPersonaPresence,

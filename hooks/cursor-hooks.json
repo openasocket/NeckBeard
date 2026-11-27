@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/hooks/cursor-adapter.js\" sessionStart",
+        "timeout": 10
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/hooks/cursor-adapter.js\" subagentStart",
+        "timeout": 10
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/hooks/cursor-adapter.js\" beforeSubmitPrompt",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|StrReplace|Shell|Bash",
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/hooks/cursor-adapter.js\" preToolUse",
+        "timeout": 10
+      }
+    ]
+  }
+}

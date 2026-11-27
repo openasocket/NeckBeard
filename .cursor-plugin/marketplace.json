@@ -1,0 +1,17 @@
+{
+  "name": "neckbeard",
+  "owner": {
+    "name": "neckbeard contributors"
+  },
+  "metadata": {
+    "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.",
+    "version": "0.3.8"
+  },
+  "plugins": [
+    {
+      "name": "neckbeard",
+      "source": "./",
+      "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished."
+    }
+  ]
+}

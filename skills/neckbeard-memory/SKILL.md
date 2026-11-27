@@ -10,6 +10,7 @@ description: >
   /neckbeard-memory, "inspect memory", "pin preference", "forget memory",
   "reset memory", or "audit enclave wall".
 argument-hint: "[inspect [bucket]|pin <bucket> <id>|unpin <bucket> <id>|edit <bucket> <id> <text>|forget <bucket> <id>|reset [bucket] [--keep-pinned]]"
+disable-model-invocation: true
 ---
 
 # NeckBeard Unified 3-Tier Memory Inspector (`/neckbeard-memory`)

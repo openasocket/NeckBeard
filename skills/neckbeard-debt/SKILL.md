@@ -5,6 +5,7 @@ description: >
   comment (and ponytail's `shortcut:` or `ponytail:` markers), enforcing the
   accepted-risk boundary from skills/neckbeard/SKILL.md. Use for "what risks did
   we accept", "list the shortcuts", or /neckbeard-debt. Reports only.
+disable-model-invocation: true
 ---
 
 ## Scan

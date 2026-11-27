@@ -1,4 +1,5 @@
 'use strict';
+const _act = require('./activation');
 // SessionStart: load the NeckBeard ruleset for this session's level.
 // In Multi-Peer Ensemble mode (default lazy loading; CREW_EAGER_LOAD=1 for upfront):
 //   - Only the elected Ensemble Leader emits a compact Crew Roster Index (~250 tokens).
@@ -7,7 +8,7 @@
 
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { readInput, readLevel, writeLevel, stateDir, emitContext, rules } = require('./lib');
+const { readInput, readLevel, writeLevel, stateDir, emitContext, rules, defaultLevel } = require('./lib');
 const {
   detectCrewEnsemble,
   formatEnsembleRules,
@@ -58,20 +59,24 @@ function buildFullNeckbeardContext(input = {}, env = process.env, ensembleInfoOv
   return text;
 }
 
-module.exports = { buildFullNeckbeardContext };
+module.exports = { buildFullNeckbeardContext, buildFullContext: buildFullNeckbeardContext };
 
 if (require.main === module) {
   (async () => {
     const input = await readInput();
-    const level = readLevel(input.session_id);
-    try { writeLevel(input.session_id, level); } catch { /* state is best-effort */ }
-    if (level === 'off') return;
-
+    const sessionId = input.session_id || input.sessionId || '';
     const cwd = input.cwd || process.cwd();
+    const act = _act.resolveActivation('neckbeard', sessionId, process.env, {
+      personaStateDir: typeof stateDir === 'function' ? stateDir() : null,
+      defaultLevelFn: typeof defaultLevel === 'function' ? defaultLevel : null,
+    });
+    if (!act.active) return;
+    const level = act.level;
+    try { writeLevel(sessionId, level); } catch { /* best-effort */ }
     const ensembleInfo = detectCrewEnsemble('neckbeard', cwd, process.env);
-    if (shouldDeferSessionStart(ensembleInfo, process.env)) {
-      if (ensembleInfo.isEnsembleLeader) {
-        let roster = formatEnsembleRosterIndex(ensembleInfo);
+    if (act.mode === 'crew') {
+      if (ensembleInfo.isEnsembleLeader || (ensembleInfo.installedPeers && ensembleInfo.installedPeers.length <= 1)) {
+        let roster = _act.formatCrewRosterBanner(ensembleInfo, level);
         try {
           const ctx = formatProjectContext(cwd, process.env, { includeCrewContext: true });
           const peersLine = ctx && ctx.split('\n').find((l) => l.includes('Crew Peers [active]'));
@@ -81,9 +86,16 @@ if (require.main === module) {
       }
       return;
     }
-
+    if (shouldDeferSessionStart(ensembleInfo, process.env) && act.mode !== 'orchestrated' && act.mode !== 'persona' && act.mode !== 'env') {
+      if (ensembleInfo.isEnsembleLeader) {
+        const roster = formatEnsembleRosterIndex(ensembleInfo);
+        if (roster) emitContext('SessionStart', roster);
+      }
+      return;
+    }
     const text = buildFullNeckbeardContext(input, process.env, ensembleInfo, level);
-    markPersonaHydrated('neckbeard', input.session_id, stateDir());
+    _act.markHydrated('neckbeard', sessionId, typeof stateDir === 'function' ? stateDir() : null);
+    markPersonaHydrated('neckbeard', sessionId, stateDir());
     if (text) emitContext('SessionStart', text);
   })().finally(() => setTimeout(() => process.exit(0), 0));
 }

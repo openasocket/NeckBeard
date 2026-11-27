@@ -1,11 +1,21 @@
 {
   "name": "neckbeard",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Smallest change that is correct, safe at the boundary it crosses, fast and scalable at a named load, simple for the end user, and finished.",
   "author": {
     "name": "neckbeard contributors"
   },
-  "keywords": ["security", "performance", "scalability", "code-review", "yagni", "vibes"],
-  "hooks": ["./hooks/claude-hooks.json", "./hooks/claude-band.json"],
+  "keywords": [
+    "security",
+    "performance",
+    "scalability",
+    "code-review",
+    "yagni",
+    "vibes"
+  ],
+  "hooks": [
+    "./hooks/claude-hooks.json",
+    "./hooks/claude-band.json"
+  ],
   "types": "./hooks/band/types.d.ts"
 }

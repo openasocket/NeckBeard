@@ -1,4 +1,5 @@
 'use strict';
+const _act = require('./activation');
 // UserPromptSubmit:
 //   - "/neckbeard <level>", "$neckbeard <level>", "@neckbeard <level>", and "stop neckbeard" change this session's level.
 //   - "/neckbeard load [value]" views or saves the project's default load parameters (strictly censored).
@@ -9,7 +10,8 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { readInput, readLevel, writeLevel, normalizeLevel, stateDir, claudeDir, emitContext, rules } = require('./lib');
+const { readInput, readLevel, writeLevel, normalizeLevel, stateDir, claudeDir, emitContext, rules,   defaultLevel,
+} = require('./lib');
 const {
   detectCrewEnsemble,
   shouldDeferSessionStart,
@@ -42,6 +44,9 @@ function parseCommand(prompt) {
   const sub = tokens[0].toLowerCase();
 
   if (tokens.length === 1) {
+    if (sub === 'on' || sub === 'enable') return 'on';
+    if (sub === 'disable') return 'off';
+    if (sub === 'status') return { action: 'status' };
     const lvl = normalizeLevel(sub);
     if (lvl) return lvl;
     if (sub === 'map') return { action: 'map' };
@@ -68,6 +73,13 @@ function parseCommand(prompt) {
   if (sub === 'band') {
     const mode = tokens[1].toLowerCase();
     return ['on', 'off', 'import', 'board'].includes(mode) ? { action: 'band', value: mode } : 'unknown';
+  }
+  const _lvlHead = normalizeLevel(sub);
+  if (_lvlHead && _lvlHead !== 'off' && tokens.length >= 2) {
+    return { action: 'oneshot', level: _lvlHead, prompt: rest.slice(tokens[0].length).trim() };
+  }
+  if (tokens.length >= 2) {
+    return { action: 'oneshot', prompt: rest };
   }
   return 'unknown';
 }
@@ -162,8 +174,134 @@ function handleSubcommand(cmd, cwd) {
   return '';
 }
 
+
+function _buildActivationFullContext(input, env, ensembleInfo, level) {
+  try {
+    const ss = require('./session-start');
+    if (typeof ss.buildFullContext === 'function') {
+      const out = ss.buildFullContext(input, env, ensembleInfo, level);
+      if (out) return typeof out === 'string' ? out : (typeof out.text === 'string' ? out.text : '');
+    }
+    if (typeof ss.buildSessionStartContext === 'function') {
+      const out = ss.buildSessionStartContext(input, { ...(env || process.env), NECKBEARD_LEVEL: level });
+      if (out) return typeof out === 'string' ? out : (typeof out.text === 'string' ? out.text : '');
+    }
+    if (typeof ss.buildSessionContext === 'function') {
+      const out = ss.buildSessionContext(input, { ...(env || process.env), NECKBEARD_LEVEL: level });
+      if (out) return typeof out === 'string' ? out : (typeof out.text === 'string' ? out.text : '');
+    }
+  } catch { /* fallback to rules */ }
+  try {
+    return typeof formatEnsembleRules === 'function'
+      ? formatEnsembleRules(rules(level), ensembleInfo)
+      : rules(level);
+  } catch {
+    return '';
+  }
+}
+
+function _handleActivatedPrompt(input, env = process.env) {
+  const safeInput = input && typeof input === 'object' ? input : {};
+  const safeEnv = env || process.env;
+  const promptText = String(safeInput.prompt || '');
+  const sessionId = safeInput.session_id || safeInput.sessionId || '';
+  const cwd = safeInput.cwd || process.cwd();
+  const sDir = typeof stateDir === 'function' ? stateDir(safeEnv) : null;
+  const ensembleInfo = detectCrewEnsemble('neckbeard', cwd, safeEnv);
+  const isLeader = Boolean(ensembleInfo.isEnsembleLeader || !ensembleInfo.installedPeers || ensembleInfo.installedPeers.length <= 1);
+  const defLvl = (typeof defaultLevel === 'function' && defaultLevel(safeEnv) !== 'off') ? defaultLevel(safeEnv) : 'full';
+
+  // 1. Global /crew on | /crew off | /crew status toggle
+  const crewCmd = _act.parseCrewCommand(promptText);
+  if (crewCmd) {
+    if (crewCmd.crewAction === 'on') {
+      _act.writeCrewSessionState(sessionId, { enabled: true, level: crewCmd.level || defLvl }, safeEnv);
+      _act.writePersonaSessionState('neckbeard', sessionId, { enabled: null, oneShot: false, oneShotLevel: null }, safeEnv, sDir);
+      _act.clearHydrated('neckbeard', sessionId, sDir);
+      return isLeader ? _act.formatCrewRosterBanner(ensembleInfo, crewCmd.level || defLvl) : '';
+    }
+    if (crewCmd.crewAction === 'off') {
+      _act.writeCrewSessionState(sessionId, { enabled: false }, safeEnv);
+      _act.writePersonaSessionState('neckbeard', sessionId, { enabled: false, level: 'off', oneShot: false }, safeEnv, sDir);
+      _act.clearHydrated('neckbeard', sessionId, sDir);
+      return isLeader
+        ? 'CREW MODE OFF for this session. All personas returned to standby (use /<persona> <prompt> for one-shot tasks, /<persona> on to enable one persona, or /crew on to re-enable Crew). Confirm in one short line.'
+        : '';
+    }
+    if (crewCmd.crewAction === 'status') {
+      return isLeader ? _act.formatCrewStatusBanner(ensembleInfo, sessionId, safeEnv) : '';
+    }
+  }
+
+  const cmd = parseCommand(promptText);
+  const actBefore = _act.resolveActivation('neckbeard', sessionId, safeEnv, {
+    personaStateDir: sDir,
+    defaultLevelFn: typeof defaultLevel === 'function' ? defaultLevel : null,
+  });
+
+  // 2. Ordinary prompt (no /<persona> command)
+  if (!cmd) {
+    if (_act.isPersonaBranchSlash('neckbeard', ["larry","lari"], promptText)) {
+      _act.writePersonaSessionState('neckbeard', sessionId, { oneShot: true, oneShotLevel: actBefore.active ? actBefore.level : defLvl }, safeEnv, sDir);
+      return '';
+    }
+    _act.clearPersonaOneShot('neckbeard', sessionId, safeEnv, sDir);
+    const act = _act.resolveActivation('neckbeard', sessionId, safeEnv, {
+      personaStateDir: sDir,
+      defaultLevelFn: typeof defaultLevel === 'function' ? defaultLevel : null,
+    });
+    if (!act.active) return '';
+    if ((act.mode === 'crew' || act.mode === 'persona') && !_act.isHydrated('neckbeard', sessionId, sDir) && _act.matchesPersonaRelevance('neckbeard', promptText)) {
+      _act.markHydrated('neckbeard', sessionId, sDir);
+      return _buildActivationFullContext(safeInput, safeEnv, ensembleInfo, act.level);
+    }
+    return '';
+  }
+
+  // 3. One-shot ("onesie-twosie") task invocation: /<id> <prompt>
+  if (typeof cmd === 'object' && cmd.action === 'oneshot') {
+    const oneLevel = cmd.level || (actBefore.active ? actBefore.level : defLvl);
+    _act.writePersonaSessionState('neckbeard', sessionId, { oneShot: true, oneShotLevel: oneLevel }, safeEnv, sDir);
+    const fullCtx = _buildActivationFullContext(safeInput, safeEnv, ensembleInfo, oneLevel);
+    return _act.formatOneShotHeader('NeckBeard', 'neckbeard', oneLevel) + (fullCtx ? '\n\n' + fullCtx : '');
+  }
+
+  // 4. Status query: /<id> status
+  if (typeof cmd === 'object' && cmd.action === 'status') {
+    return _act.formatPersonaStatusLine('NeckBeard', 'neckbeard', actBefore);
+  }
+
+  // 5. Known subcommands (map, load, memory, triage, verify, persona, share, etc.)
+  if (typeof cmd === 'object' && cmd.action) {
+    return null; // delegate to native main() subcommand handler
+  }
+
+  // 6. Explicit enable / disable / level switch
+  if (cmd === 'off') {
+    _act.writePersonaSessionState('neckbeard', sessionId, { enabled: false, level: 'off', oneShot: false }, safeEnv, sDir);
+    _act.clearHydrated('neckbeard', sessionId, sDir);
+    try { writeLevel(sessionId, 'off', safeEnv); } catch { /* best-effort */ }
+    return 'NECKBEARD MODE OFF for this session (returned to standby). Confirm in one short line.';
+  }
+  if (cmd === 'on' || cmd === 'lite' || cmd === 'full' || cmd === 'paranoid') {
+    const curLvl = actBefore.active ? actBefore.level : defLvl;
+    const next = cmd === 'on' ? curLvl : cmd;
+    _act.writePersonaSessionState('neckbeard', sessionId, { enabled: true, level: next, oneShot: false }, safeEnv, sDir);
+    _act.markHydrated('neckbeard', sessionId, sDir);
+    try { writeLevel(sessionId, next, safeEnv); } catch { /* best-effort */ }
+    return null; // delegate to native main() to emit persona-flavored level confirmation + rules
+  }
+
+  return null;
+}
+
 async function main() {
   const input = await readInput();
+  const _activatedOut = _handleActivatedPrompt(input, process.env);
+  if (_activatedOut !== null) {
+    if (_activatedOut) emitContext('UserPromptSubmit', _activatedOut);
+    return;
+  }
   const cmd = parseCommand(input.prompt);
   const id = input.session_id;
   const cwd = input.cwd || process.cwd();

@@ -669,7 +669,7 @@ test('Pi/Oh My Pi status-bar extension and OpenCode/Kilo Code plugin adapter', a
       CLAUDE_CONFIG_DIR: '',
       CODEX_HOME: '',
       COPILOT_HOME: '',
-      CREW_SOLO_PERSONA: '',
+      CREW_SOLO_PERSONA: '', CREW_ENABLED: '1',
       ...extra,
     };
   }
@@ -903,7 +903,7 @@ test('§4.5 dynamic 14th persona discovery, automatic sibling guard, and anti-hi
     CLAUDE_CONFIG_DIR: '',
     CODEX_HOME: '',
     COPILOT_HOME: '',
-    CREW_SOLO_PERSONA: '',
+    CREW_SOLO_PERSONA: '', CREW_ENABLED: '1',
   };
 
   // (c) Synthetic 14th DomainCraft persona: cmmc-auditor (priority 210, storeFile .cmmc-auditor.json)
@@ -1036,7 +1036,7 @@ test('anti-hijack rejects reserved platform persona IDs (crew/.crew.json, ai-aud
     CLAUDE_CONFIG_DIR: '',
     CODEX_HOME: '',
     COPILOT_HOME: '',
-    CREW_SOLO_PERSONA: '',
+    CREW_SOLO_PERSONA: '', CREW_ENABLED: '1',
   };
 
   // Exact hostile crew spoof descriptor targeting .crew.json

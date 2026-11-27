@@ -6,6 +6,7 @@ description: >
   security issues identified and resolved (defaulting to .ai-audit/ VIBES data
   when present). Use for /neckbeard-gain, "neckbeard stats", "neckbeard board",
   or "what has neckbeard caught".
+disable-model-invocation: true
 ---
 
 # Neckbeard Gain

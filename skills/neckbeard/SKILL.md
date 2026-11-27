@@ -7,6 +7,7 @@ description: >
   "be careful", "secure this", "do it properly", "make it scale", "make it fast",
   or "finish it". Levels: lite, full (default), paranoid, off.
 argument-hint: "[lite|full|paranoid|off]"
+disable-model-invocation: true
 ---
 
 # Neckbeard

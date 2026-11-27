@@ -1,4 +1,5 @@
 'use strict';
+const _act = require('./activation');
 // PreToolUse guard. Fail-closed protection at full and paranoid levels:
 //   full:     blocks hard-coded secrets (including Base64/JSON-escaped), ALL writes under .ai-audit/**,
 //             writes to read-only .crew.json, ALL writes to sibling persona stores (dynamically loaded
@@ -18,6 +19,8 @@ const {
   getDynamicPeerStoreFiles,
   recordGuardBlock,
   emitDeny,
+  stateDir,
+  defaultLevel,
 } = require('./lib');
 const {
   RAINMAKER_INBOX_FILE,
@@ -712,7 +715,14 @@ if (require.main === module) {
   (async () => {
     if (process.env.NECKBEARD_GUARD === '0') return;
     const input = await readInput();
-    const reason = check(input.tool_name, input.tool_input, readLevel(input.session_id), process.env);
+    const _sid = input.session_id || input.sessionId || '';
+    const _sDir = typeof stateDir === 'function' ? stateDir(process.env) : null;
+    const _actRes = _act.resolveActivation('neckbeard', _sid, process.env, {
+      personaStateDir: _sDir,
+      defaultLevelFn: typeof defaultLevel === 'function' ? defaultLevel : null,
+    });
+    if (!_actRes.active) return;
+    const reason = check(input.tool_name, input.tool_input, _actRes.level, process.env);
     if (reason) {
       const kind = reason.includes('VIBES')
         ? 'vibes-tamper'

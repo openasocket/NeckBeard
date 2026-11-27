@@ -7,6 +7,7 @@ description: >
   "security review", "review my PR", "review the last commit", or
   /neckbeard-review. Reports only; changes no code.
 argument-hint: "[--ci]"
+disable-model-invocation: true
 ---
 
 # Neckbeard review

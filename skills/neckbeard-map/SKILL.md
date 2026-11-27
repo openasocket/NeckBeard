@@ -8,6 +8,7 @@ description: >
   /neckbeard-map, "/neckbeard map", "map this repo", "refresh the boundary map",
   or "generate the architecture map".
 argument-hint: "[--uncapped]"
+disable-model-invocation: true
 ---
 
 # Neckbeard Map

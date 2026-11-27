@@ -9,6 +9,7 @@ description: >
   "security audit", "is this codebase safe", or /neckbeard-audit. One-shot
   report; changes no code.
 argument-hint: "[lite|complete] [path]"
+disable-model-invocation: true
 ---
 
 # Neckbeard audit
